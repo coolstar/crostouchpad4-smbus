@@ -196,6 +196,12 @@ CONST HID_DESCRIPTOR DefaultHidDescriptor = {
 #define true 1
 #define false 0
 
+struct _CYAPA_CONTEXT;
+
+typedef BOOLEAN(*SMBUS_INTERNAL_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, int status);
+typedef void (*SMBUS_USER_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, BOOLEAN success, void *readbuf, int readlen, PVOID userArg);
+
+
 typedef struct _CYAPA_CONTEXT
 {
 
@@ -210,17 +216,17 @@ typedef struct _CYAPA_CONTEXT
 	WDFQUEUE ReportQueue;
 
 	BOOLEAN SMBusLocked;
-	unsigned long SMBusBase;
+	unsigned short SMBusBase;
 	ULONG SMBusLen;
-	int SMBusCallbackType;
+
+	SMBUS_INTERNAL_CALLBACK SMBusInternalCallback;
 
 	uint8_t *SMBusBlockWriteBuf;
 	uint8_t SMBusBlockWriteIdx;
 	uint8_t SMBusBlockWriteLen;
 
-	int CyapaBlockReadType;
-
-	int SMBusWriteAttempts;
+	SMBUS_USER_CALLBACK SMBusUserCallback;
+	PVOID SMBusUserCallbackArg;
 
 	BOOLEAN TrackpadIsBooted;
 
@@ -279,8 +285,6 @@ DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_UNLOAD CyapaDriverUnload;
 
 EVT_WDF_DRIVER_DEVICE_ADD CyapaEvtDeviceAdd;
-
-EVT_WDFDEVICE_WDM_IRP_PREPROCESS CyapaEvtWdmPreprocessMnQueryId;
 
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL CyapaEvtInternalDeviceControl;
 

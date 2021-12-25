@@ -21,11 +21,10 @@ static void outb_p(unsigned char value, unsigned short int port) {
 	__outbyte(port, value);
 }
 
-uint32_t cyapa_read_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd);
-uint32_t cyapa_write_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t value);
-uint32_t cyapa_read_block(PCYAPA_CONTEXT pDevice, uint8_t cmd);
-uint8_t cyapa_write_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t *buf, uint8_t len);
-uint8_t cyapa_write_byte_done(PCYAPA_CONTEXT pDevice);
+uint32_t cyapa_read_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBACK callback, PVOID arg);
+uint32_t cyapa_write_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t value, SMBUS_USER_CALLBACK callback, PVOID arg);
+uint32_t cyapa_read_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBACK callback, PVOID arg);
+uint8_t cyapa_write_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t *buf, uint8_t len, SMBUS_USER_CALLBACK callback, PVOID arg);
 
 static int sqr(int num) {
 	return num * num;
@@ -75,6 +74,95 @@ __in PUNICODE_STRING RegistryPath
 	return status;
 }
 
+VOID cyapa_set_full_power(
+	IN PCYAPA_CONTEXT pDevice,
+	BOOLEAN success,
+	void* readbuf,
+	int readlen,
+	PVOID userArg
+) {
+	UNREFERENCED_PARAMETER(userArg);
+
+	uint8_t power_mode = CMD_POWER_MODE_FULL;
+
+	//DbgPrint("Read Power Mode: 0x%x\n", power);
+
+	uint8_t power = ((uint8_t *)readbuf)[0];
+	power = (power & ~0xFC);
+	power |= power_mode & 0xFc;
+
+	cyapa_write_byte(pDevice, 0x2, power, NULL, NULL);
+}
+
+VOID CyapaReadCapabilities(
+	IN PCYAPA_CONTEXT pDevice,
+	BOOLEAN success,
+	void* readbuf,
+	int readlen,
+	PVOID userArg
+) {
+	UNREFERENCED_PARAMETER(userArg);
+
+	if (!success || readlen < sizeof(struct cyapa_cap)) {
+		return;
+	}
+
+	struct cyapa_cap* cap = (struct cyapa_cap*)readbuf;
+	if (strncmp((const char*)cap->prod_ida, "CYTRA", 5) != 0) {
+		DbgPrint("[cyapainit] Product ID \"%5.5s\" mismatch\n",
+			cap->prod_ida);
+	}
+
+	pDevice->max_x = ((cap->max_abs_xy_high << 4) & 0x0F00) |
+		cap->max_abs_x_low;
+	pDevice->max_y = ((cap->max_abs_xy_high << 8) & 0x0F00) |
+		cap->max_abs_y_low;
+
+	pDevice->phy_x = ((cap->phy_siz_xy_high << 4) & 0x0F00) |
+		cap->phy_siz_x_low;
+	pDevice->phy_y = ((cap->phy_siz_xy_high << 8) & 0x0F00) |
+		cap->phy_siz_y_low;
+
+	DbgPrint("[cyapainit] %5.5s-%6.6s-%2.2s buttons=%c%c%c res=%dx%d\n",
+		cap->prod_ida, cap->prod_idb, cap->prod_idc,
+		((cap->buttons & CYAPA_FNGR_LEFT) ? 'L' : '-'),
+		((cap->buttons & CYAPA_FNGR_MIDDLE) ? 'M' : '-'),
+		((cap->buttons & CYAPA_FNGR_RIGHT) ? 'R' : '-'),
+		pDevice->max_x,
+		pDevice->max_y);
+
+	DbgPrint("Max X: %d Y: %d Phys X: %d Y: %d\n", pDevice->max_x, pDevice->max_y, pDevice->phy_x, pDevice->phy_y);
+
+	uint16_t max_x[] = { pDevice->max_x };
+	uint16_t max_y[] = { pDevice->max_y };
+
+	uint8_t* max_x8bit = (uint8_t*)max_x;
+	uint8_t* max_y8bit = (uint8_t*)max_y;
+
+	pDevice->max_x_hid[0] = max_x8bit[0];
+	pDevice->max_x_hid[1] = max_x8bit[1];
+
+	pDevice->max_y_hid[0] = max_y8bit[0];
+	pDevice->max_y_hid[1] = max_y8bit[1];
+
+
+	uint16_t phy_x[] = { pDevice->phy_x * 10 };
+	uint16_t phy_y[] = { pDevice->phy_y * 10 };
+
+	uint8_t* phy_x8bit = (uint8_t*)phy_x;
+	uint8_t* phy_y8bit = (uint8_t*)phy_y;
+
+	pDevice->phy_x_hid[0] = phy_x8bit[0];
+	pDevice->phy_x_hid[1] = phy_x8bit[1];
+
+	pDevice->phy_y_hid[0] = phy_y8bit[0];
+	pDevice->phy_y_hid[1] = phy_y8bit[1];
+
+	cyapa_read_byte(pDevice, 0x3, cyapa_set_full_power, NULL); //read power mode
+
+	pDevice->TrackpadIsBooted = TRUE;
+}
+
 VOID
 CyapaBootWorkItem(
 	IN WDFWORKITEM  WorkItem
@@ -85,12 +173,11 @@ CyapaBootWorkItem(
 
 	WdfObjectDelete(WorkItem);
 
-	cyapa_read_block(pDevice, 0x99);
+	cyapa_read_block(pDevice, 0x99, CyapaReadCapabilities, NULL);
 }
 
 void CyapaBootTimer(_In_ WDFTIMER hTimer) {
 	WDFDEVICE Device = (WDFDEVICE)WdfTimerGetParentObject(hTimer);
-	PCYAPA_CONTEXT pDevice = GetDeviceContext(Device);
 
 	WDF_OBJECT_ATTRIBUTES attributes;
 	WDF_WORKITEM_CONFIG workitemConfig;
@@ -110,32 +197,77 @@ void CyapaBootTimer(_In_ WDFTIMER hTimer) {
 	WdfTimerStop(hTimer, FALSE);
 }
 
+static char bl_exit[] = {
+		0x00, 0xff, 0xa5, 0x00, 0x01,
+		0x02, 0x03, 0x04, 0x05, 0x06, 0x07 };
+
+#define TPAD_BOOT_CHECK 0x10
+#define TPAD_BOOT_ATTEMPTS_MASK 0xF
+
+VOID BOOTTRACKPAD2(
+	_In_ PCYAPA_CONTEXT pDevice,
+	BOOLEAN success,
+	void* readbuf,
+	int readlen,
+	int bootdata
+) {
+	bool bootchecked = bootdata & TPAD_BOOT_CHECK;
+	bool booted = false;
+	if (bootchecked) {
+		DbgPrint("Checked boot... %d\n", success);
+		if (success) {
+			if (readlen >= sizeof(struct cyapa_boot_regs)) {
+				struct cyapa_boot_regs* boot = readbuf;
+				if (boot->stat & CYAPA_STAT_RUNNING) {
+					booted = true;
+					DbgPrint("Device is already running! No need to boot!\n");
+				}
+				else {
+					DbgPrint("Device needs to boot!\n");
+					if (boot->error & CYAPA_ERROR_BOOTLOADER) {
+						DbgPrint("Device is errored in bootloader!\n");
+					}
+				}
+			}
+		}
+	}
+	else {
+		booted = success;
+	}
+
+	int attempts = bootdata & TPAD_BOOT_ATTEMPTS_MASK;
+	if (booted || attempts == 2) {
+		if (!success) {
+			DbgPrint("Warning: Device won't function if not already booted!\n");
+		}
+
+		WDF_TIMER_CONFIG              timerConfig;
+		WDFTIMER                      hTimer;
+		WDF_OBJECT_ATTRIBUTES         attributes;
+
+		WDF_TIMER_CONFIG_INIT(&timerConfig, CyapaBootTimer);
+
+		WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+		attributes.ParentObject = pDevice->FxDevice;
+		WdfTimerCreate(&timerConfig, &attributes, &hTimer);
+
+		WdfTimerStart(hTimer, WDF_REL_TIMEOUT_IN_MS(75));
+	}
+	else if (attempts < 2) {
+		attempts += 1;
+		cyapa_write_block(pDevice, CMD_BOOT_STATUS, (uint8_t*)bl_exit, sizeof(bl_exit), (SMBUS_USER_CALLBACK)BOOTTRACKPAD2, (PVOID)attempts);
+	}
+}
+
 NTSTATUS BOOTTRACKPAD(
 	_In_  PCYAPA_CONTEXT  pDevice
 	)
 {
 	NTSTATUS status = 0;
 
-	static char bl_exit[] = {
-		0x00, 0xff, 0xa5, 0x00, 0x01,
-		0x02, 0x03, 0x04, 0x05, 0x06, 0x07 };
-
 	pDevice->TrackpadIsBooted = false;
 
-	pDevice->SMBusWriteAttempts = 0;
-	cyapa_write_block(pDevice, CMD_BOOT_STATUS, bl_exit, sizeof(bl_exit));
-
-	WDF_TIMER_CONFIG              timerConfig;
-	WDFTIMER                      hTimer;
-	WDF_OBJECT_ATTRIBUTES         attributes;
-
-	WDF_TIMER_CONFIG_INIT(&timerConfig, CyapaBootTimer);
-
-	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-	attributes.ParentObject = pDevice->FxDevice;
-	status = WdfTimerCreate(&timerConfig, &attributes, &hTimer);
-
-	WdfTimerStart(hTimer, WDF_REL_TIMEOUT_IN_MS(75));
+	cyapa_read_block(pDevice, 0xc1, (SMBUS_USER_CALLBACK)BOOTTRACKPAD2, (PVOID)TPAD_BOOT_CHECK);
 
 	return status;
 }
@@ -193,7 +325,7 @@ Status
 			pDevice->SMBusBase = pDescriptor->u.Port.Start.LowPart;
 			pDevice->SMBusLen = pDescriptor->u.Port.Length;
 
-			DbgPrint("crostrackpad-smbus: Got IO Port 0x%x (len 0x%x)\n", pDevice->SMBusBase, pDevice->SMBusLen);
+			CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "crostrackpad-smbus: Got IO Port 0x%x (len 0x%x)\n", pDevice->SMBusBase, pDevice->SMBusLen);
 
 			status = STATUS_SUCCESS;
 			break;
@@ -206,6 +338,8 @@ Status
 	}
 
 	pDevice->SMBusLocked = false;
+	pDevice->SMBusUserCallback = NULL;
+	pDevice->SMBusInternalCallback = NULL;
 	return status;
 }
 
@@ -271,6 +405,8 @@ Status
 		pDevice->Flags[i] = 0;
 	}
 
+	pDevice->TrackpadIsBooted = false;
+
 	BOOTTRACKPAD(pDevice);
 
 	pDevice->RegsSet = false;
@@ -330,294 +466,158 @@ BOOLEAN OnInterruptIsr(
 	if (!pDevice->SMBusLocked)
 		return false;
 
-	if (pDevice->SMBusCallbackType == SMBusCallbackTypeNone)
+	if (pDevice->SMBusInternalCallback == NULL)
 		return false;
-
-	NTSTATUS ntstatus = WdfFdoQueryForInterface(pDevice->FxDevice,
-		&GUID_BUS_INTERFACE_STANDARD,
-		(PINTERFACE)&pDevice->BusInterface,
-		sizeof(BUS_INTERFACE_STANDARD),
-		1, // Version
-		NULL); //InterfaceSpecificData
 
 	//DbgPrint("SMBus Interrupt Raised!\n");
 	pDevice->InterruptRaised = true;
 
 	int status = inb_p(SMBHSTSTS(pDevice));
-	if (pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlock) {
-		if (status & SMBHSTSTS_BYTE_DONE) {
-			if (cyapa_write_byte_done(pDevice))
-				return true;
+
+	if (pDevice->SMBusInternalCallback) {
+		SMBUS_INTERNAL_CALLBACK callback = pDevice->SMBusInternalCallback;
+		pDevice->SMBusInternalCallback = NULL;
+
+		BOOLEAN ret = callback(pDevice, status);
+		if (ret) {
+			return ret;
 		}
+		else {
+			status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
+			if (status) {
+				outb_p(status, SMBHSTSTS(pDevice));
+			}
+			return true;
+		}
+	}
+	else {
+		DbgPrint("Warning: No Internal Callback... Spurious interrupt?\n");
 	}
 
 	status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
 	if (status) {
 		outb_p(status, SMBHSTSTS(pDevice));
-		if (pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlock || pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlockDone) {
-			if (pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlock)
-				outb_p(0x4, SMBHSTSTS(pDevice));
-			if (NT_SUCCESS(status)) {
-				pDevice->BusInterface.SetBusData(
-					pDevice->BusInterface.Context,
-					PCI_WHICHSPACE_CONFIG, //WRITE config
-					&pDevice->SMBusHostc,
-					SMBHSTCFG,
-					1); //restore I2C_EN
-			}
-
-			//SMBus Error raised!
-			pDevice->SMBusLocked = false;
-			pDevice->InterruptRaised = false;
-
-			pDevice->SMBusWriteAttempts++;
-			if (pDevice->SMBusWriteAttempts < 2 && pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlock) {
-				cyapa_write_block(pDevice, 0x00, pDevice->SMBusBlockWriteBuf, pDevice->SMBusBlockWriteLen);
-			}
-			else {
-				pDevice->SMBusCallbackType = SMBusCallbackTypeNone;
-				pDevice->TrackpadIsBooted = true;
-			}
-
-			DbgPrint("Returning due to error.\n");
-			return true;
-		}
-	}
-
-	outb_p(0x2, SMBHSTSTS(pDevice));
-
-	if (pDevice->SMBusCallbackType == SMBusCallbackTypeWriteByte || pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlock) {
-		if (pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlock || pDevice->SMBusCallbackType == SMBusCallbackTypeWriteBlockDone) {
-			outb_p(0x2, SMBHSTSTS(pDevice));
-			if (NT_SUCCESS(status)) {
-				pDevice->BusInterface.SetBusData(
-					pDevice->BusInterface.Context,
-					PCI_WHICHSPACE_CONFIG, //WRITE config
-					&pDevice->SMBusHostc,
-					SMBHSTCFG,
-					1); //restore I2C_EN
-			}
-		}
-		
-		pDevice->SMBusLocked = false;
-		pDevice->InterruptRaised = false;
-		pDevice->SMBusCallbackType = SMBusCallbackTypeNone;
-		return true;
-	}
-
-	if (pDevice->SMBusCallbackType == SMBusCallbackTypeReadByte) {
-		uint8_t power = inb_p(SMBHSTDAT0(pDevice));
-
-		uint8_t power_mode = CMD_POWER_MODE_FULL;
-
-		pDevice->SMBusLocked = false;
-		pDevice->InterruptRaised = false;
-		pDevice->SMBusCallbackType = SMBusCallbackTypeNone;
-
-		//DbgPrint("Read Power Mode: 0x%x\n", power);
-
-		power = (power & ~0xFC);
-		power |= power_mode & 0xFc;
-
-		cyapa_write_byte(pDevice, 0x2, power_mode);
-
-		return true;
-	}
-
-	if (pDevice->SMBusCallbackType == SMBusCallbackTypeReadBlock) {
-		pDevice->SMBusCallbackType = SMBusCallbackTypeNone;
-
-		unsigned char len = inb_p(SMBHSTDAT0(pDevice));
-		if (len < 1 || len > I2C_SMBUS_BLOCK_MAX) {
-			DbgPrint("SMBus invalid length received...\n");
-			outb_p(inb_p(SMBAUXCTL(pDevice)) &
-				~(SMBAUXCTL_CRC | SMBAUXCTL_E32B), SMBAUXCTL(pDevice));
-
-			pDevice->SMBusLocked = false;
-			pDevice->InterruptRaised = false;
-			return true;
-		}
-
-		uint8_t val[256];
-		for (int i = 0; i < len; i++) {
-			val[i] = inb_p(SMBBLKDAT(pDevice));
-		}
-		//disable hardware PEC
-		outb_p(inb_p(SMBAUXCTL(pDevice)) &
-			~(SMBAUXCTL_CRC | SMBAUXCTL_E32B), SMBAUXCTL(pDevice));
-
-		pDevice->SMBusLocked = false;
-		pDevice->InterruptRaised = false;
-
-		if (pDevice->CyapaBlockReadType == 2) {
-			pDevice->CyapaBlockReadType = 0;
-
-			struct cyapa_cap *cap = (struct cyapa_cap *)val;
-			if (strncmp((const char *)cap->prod_ida, "CYTRA", 5) != 0) {
-				DbgPrint("[cyapainit] Product ID \"%5.5s\" mismatch\n",
-					cap->prod_ida);
-			}
-
-			pDevice->max_x = ((cap->max_abs_xy_high << 4) & 0x0F00) |
-				cap->max_abs_x_low;
-			pDevice->max_y = ((cap->max_abs_xy_high << 8) & 0x0F00) |
-				cap->max_abs_y_low;
-
-			pDevice->phy_x = ((cap->phy_siz_xy_high << 4) & 0x0F00) |
-				cap->phy_siz_x_low;
-			pDevice->phy_y = ((cap->phy_siz_xy_high << 8) & 0x0F00) |
-				cap->phy_siz_y_low;
-
-			DbgPrint("[cyapainit] %5.5s-%6.6s-%2.2s buttons=%c%c%c res=%dx%d\n",
-				cap->prod_ida, cap->prod_idb, cap->prod_idc,
-				((cap->buttons & CYAPA_FNGR_LEFT) ? 'L' : '-'),
-				((cap->buttons & CYAPA_FNGR_MIDDLE) ? 'M' : '-'),
-				((cap->buttons & CYAPA_FNGR_RIGHT) ? 'R' : '-'),
-				pDevice->max_x,
-				pDevice->max_y);
-
-			DbgPrint("Max X: %d Y: %d Phys X: %d Y: %d\n", pDevice->max_x, pDevice->max_y, pDevice->phy_x, pDevice->phy_y);
-
-			uint16_t max_x[] = { pDevice->max_x };
-			uint16_t max_y[] = { pDevice->max_y };
-
-			uint8_t *max_x8bit = (uint8_t *)max_x;
-			uint8_t *max_y8bit = (uint8_t *)max_y;
-
-			pDevice->max_x_hid[0] = max_x8bit[0];
-			pDevice->max_x_hid[1] = max_x8bit[1];
-
-			pDevice->max_y_hid[0] = max_y8bit[0];
-			pDevice->max_y_hid[1] = max_y8bit[1];
-
-
-			uint16_t phy_x[] = { pDevice->phy_x * 10 };
-			uint16_t phy_y[] = { pDevice->phy_y * 10 };
-
-			uint8_t *phy_x8bit = (uint8_t *)phy_x;
-			uint8_t *phy_y8bit = (uint8_t *)phy_y;
-
-			pDevice->phy_x_hid[0] = phy_x8bit[0];
-			pDevice->phy_x_hid[1] = phy_x8bit[1];
-
-			pDevice->phy_y_hid[0] = phy_y8bit[0];
-			pDevice->phy_y_hid[1] = phy_y8bit[1];
-
-			cyapa_read_byte(pDevice, 0x3); //read power mode
-		}
-
-		if (pDevice->CyapaBlockReadType == 1) {
-			pDevice->CyapaBlockReadType = 0;
-
-			//DbgPrint("Reading Multitouch Report!\n");
-
-			LARGE_INTEGER CurrentTime;
-
-			KeQuerySystemTime(&CurrentTime);
-
-			LARGE_INTEGER DIFF;
-
-			DIFF.QuadPart = 0;
-
-			if (pDevice->LastTime.QuadPart != 0)
-				DIFF.QuadPart = (CurrentTime.QuadPart - pDevice->LastTime.QuadPart) / 1000;
-
-			struct cyapa_regs *regs = (struct cyapa_regs *)val;
-
-			struct _CYAPA_MULTITOUCH_REPORT report;
-			report.ReportID = REPORTID_MTOUCH;
-
-			int nfingers;
-
-			nfingers = CYAPA_FNGR_NUMFINGERS(regs->fngr);
-
-			int x[15];
-			int y[15];
-			int p[15];
-			for (int i = 0; i < 15; i++) {
-				x[i] = -1;
-				y[i] = -1;
-				p[i] = -1;
-			}
-			for (int i = 0; i < nfingers; i++) {
-				int a = regs->touch[i].id;
-				int rawx = CYAPA_TOUCH_X(regs, i);
-				int rawy = CYAPA_TOUCH_Y(regs, i);
-				int rawp = CYAPA_TOUCH_P(regs, i);
-				x[a] = rawx;
-				y[a] = rawy;
-				p[a] = rawp;
-			}
-			for (int i = 0; i < 15; i++) {
-				if (pDevice->Flags[i] != 0 && pDevice->Flags != MXT_T9_RELEASE && x[i] == -1) {
-					pDevice->Flags[i] = MXT_T9_RELEASE;
-				}
-				if (x[i] != -1) {
-					bool updateValues = false;
-
-					if (pDevice->Flags[i] == 0 || pDevice->Flags[i] == MXT_T9_RELEASE)
-						updateValues = true;
-
-					pDevice->Flags[i] = MXT_T9_DETECT;
-
-					//if (diffsig(x[i], y[i], pDevice->XValue[i], pDevice->YValue[i]) == 1)
-						updateValues = true;
-
-					if (updateValues) {
-						pDevice->XValue[i] = x[i];
-						pDevice->YValue[i] = y[i];
-						pDevice->PValue[i] = p[i];
-					}
-				}
-			}
-
-			pDevice->BUTTONPRESSED = ((regs->fngr & CYAPA_FNGR_LEFT) != 0);
-
-			pDevice->TIMEINT += DIFF.QuadPart;
-
-			pDevice->LastTime = CurrentTime;
-
-			int count = 0, i = 0;
-			while (count < 5 && i < 15) {
-				if (pDevice->Flags[i] != 0) {
-					report.Touch[count].ContactID = i;
-
-					report.Touch[count].XValue = pDevice->XValue[i];
-					report.Touch[count].YValue = pDevice->YValue[i];
-					report.Touch[count].Pressure = pDevice->PValue[i];
-
-					uint8_t flags = pDevice->Flags[i];
-					if (flags & MXT_T9_DETECT) {
-						report.Touch[count].Status = MULTI_CONFIDENCE_BIT | MULTI_TIPSWITCH_BIT;
-					}
-					else if (flags & MXT_T9_PRESS) {
-						report.Touch[count].Status = MULTI_CONFIDENCE_BIT | MULTI_TIPSWITCH_BIT;
-					}
-					else if (flags & MXT_T9_RELEASE) {
-						report.Touch[count].Status = MULTI_CONFIDENCE_BIT;
-						pDevice->Flags[i] = 0;
-					}
-					else
-						report.Touch[count].Status = 0;
-
-					count++;
-				}
-				i++;
-			}
-
-			report.ScanTime = pDevice->TIMEINT;
-			report.IsDepressed = pDevice->BUTTONPRESSED;
-
-			report.ContactCount = count;
-
-			size_t bytesWritten;
-			CyapaProcessVendorReport(pDevice, &report, sizeof(report), &bytesWritten);
-
-			pDevice->RegsSet = true;
-		}
 	}
 
 	return true;
+}
+
+VOID CyapaReadWriteCallback(
+	IN PCYAPA_CONTEXT pDevice,
+	BOOLEAN success,
+	void* readbuf,
+	int readlen,
+	PVOID userArg
+) {
+	UNREFERENCED_PARAMETER(userArg);
+	if (!success || readlen < sizeof(struct cyapa_regs)) {
+		return;
+	}
+	//DbgPrint("Reading Multitouch Report!\n");
+
+	LARGE_INTEGER CurrentTime;
+
+	KeQuerySystemTime(&CurrentTime);
+
+	LARGE_INTEGER DIFF;
+
+	DIFF.QuadPart = 0;
+
+	if (pDevice->LastTime.QuadPart != 0)
+		DIFF.QuadPart = (CurrentTime.QuadPart - pDevice->LastTime.QuadPart) / 1000;
+
+	struct cyapa_regs* regs = (struct cyapa_regs*)readbuf;
+
+	struct _CYAPA_MULTITOUCH_REPORT report;
+	report.ReportID = REPORTID_MTOUCH;
+
+	int nfingers;
+
+	nfingers = CYAPA_FNGR_NUMFINGERS(regs->fngr);
+
+	int x[15];
+	int y[15];
+	int p[15];
+	for (int i = 0; i < 15; i++) {
+		x[i] = -1;
+		y[i] = -1;
+		p[i] = -1;
+	}
+	for (int i = 0; i < nfingers; i++) {
+		int a = regs->touch[i].id;
+		int rawx = CYAPA_TOUCH_X(regs, i);
+		int rawy = CYAPA_TOUCH_Y(regs, i);
+		int rawp = CYAPA_TOUCH_P(regs, i);
+		x[a] = rawx;
+		y[a] = rawy;
+		p[a] = rawp;
+	}
+	for (int i = 0; i < 15; i++) {
+		if (pDevice->Flags[i] != 0 && pDevice->Flags != MXT_T9_RELEASE && x[i] == -1) {
+			pDevice->Flags[i] = MXT_T9_RELEASE;
+		}
+		if (x[i] != -1) {
+			bool updateValues = false;
+
+			if (pDevice->Flags[i] == 0 || pDevice->Flags[i] == MXT_T9_RELEASE)
+				updateValues = true;
+
+			pDevice->Flags[i] = MXT_T9_DETECT;
+
+			//if (diffsig(x[i], y[i], pDevice->XValue[i], pDevice->YValue[i]) == 1)
+			updateValues = true;
+
+			if (updateValues) {
+				pDevice->XValue[i] = x[i];
+				pDevice->YValue[i] = y[i];
+				pDevice->PValue[i] = p[i];
+			}
+		}
+	}
+
+	pDevice->BUTTONPRESSED = ((regs->fngr & CYAPA_FNGR_LEFT) != 0);
+
+	pDevice->TIMEINT += DIFF.QuadPart;
+
+	pDevice->LastTime = CurrentTime;
+
+	int count = 0, i = 0;
+	while (count < 5 && i < 15) {
+		if (pDevice->Flags[i] != 0) {
+			report.Touch[count].ContactID = i;
+
+			report.Touch[count].XValue = pDevice->XValue[i];
+			report.Touch[count].YValue = pDevice->YValue[i];
+			report.Touch[count].Pressure = pDevice->PValue[i];
+
+			uint8_t flags = pDevice->Flags[i];
+			if (flags & MXT_T9_DETECT) {
+				report.Touch[count].Status = MULTI_CONFIDENCE_BIT | MULTI_TIPSWITCH_BIT;
+			}
+			else if (flags & MXT_T9_PRESS) {
+				report.Touch[count].Status = MULTI_CONFIDENCE_BIT | MULTI_TIPSWITCH_BIT;
+			}
+			else if (flags & MXT_T9_RELEASE) {
+				report.Touch[count].Status = MULTI_CONFIDENCE_BIT;
+				pDevice->Flags[i] = 0;
+			}
+			else
+				report.Touch[count].Status = 0;
+
+			count++;
+		}
+		i++;
+	}
+
+	report.ScanTime = pDevice->TIMEINT;
+	report.IsDepressed = pDevice->BUTTONPRESSED;
+
+	report.ContactCount = count;
+
+	size_t bytesWritten;
+	CyapaProcessVendorReport(pDevice, &report, sizeof(report), &bytesWritten);
+
+	pDevice->RegsSet = true;
 }
 
 VOID
@@ -639,7 +639,7 @@ CyapaReadWriteWorkItem(
 	if (!pDevice->TrackpadIsBooted)
 		return;
 
-	cyapa_read_block(pDevice, 0x81);
+	cyapa_read_block(pDevice, 0x81, CyapaReadWriteCallback, NULL);
 }
 
 void CyapaTimerFunc(_In_ WDFTIMER hTimer){
@@ -711,28 +711,6 @@ IN PWDFDEVICE_INIT DeviceInit
 		pnpCallbacks.EvtDeviceD0Exit = OnD0Exit;
 
 		WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpCallbacks);
-	}
-
-	//
-	// Because we are a virtual device the root enumerator would just put null values 
-	// in response to IRP_MN_QUERY_ID. Lets override that.
-	//
-
-	minorFunction = IRP_MN_QUERY_ID;
-
-	status = WdfDeviceInitAssignWdmIrpPreprocessCallback(
-		DeviceInit,
-		CyapaEvtWdmPreprocessMnQueryId,
-		IRP_MJ_PNP,
-		&minorFunction,
-		1
-		);
-	if (!NT_SUCCESS(status))
-	{
-		CyapaPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
-			"WdfDeviceInitAssignWdmIrpPreprocessCallback failed Status 0x%x\n", status);
-
-		return status;
 	}
 
 	//
@@ -844,110 +822,6 @@ IN PWDFDEVICE_INIT DeviceInit
 
 	devContext->DeviceMode = DEVICE_MODE_MOUSE;
 	devContext->FxDevice = device;
-
-	return status;
-}
-
-NTSTATUS
-CyapaEvtWdmPreprocessMnQueryId(
-WDFDEVICE Device,
-PIRP Irp
-)
-{
-	NTSTATUS            status;
-	PIO_STACK_LOCATION  IrpStack, previousSp;
-	PDEVICE_OBJECT      DeviceObject;
-	PWCHAR              buffer;
-
-	PAGED_CODE();
-
-	//
-	// Get a pointer to the current location in the Irp
-	//
-
-	IrpStack = IoGetCurrentIrpStackLocation(Irp);
-
-	//
-	// Get the device object
-	//
-	DeviceObject = WdfDeviceWdmGetDeviceObject(Device);
-
-
-	CyapaPrint(DEBUG_LEVEL_VERBOSE, DBG_PNP,
-		"CyapaEvtWdmPreprocessMnQueryId Entry\n");
-
-	//
-	// This check is required to filter out QUERY_IDs forwarded
-	// by the HIDCLASS for the parent FDO. These IDs are sent
-	// by PNP manager for the parent FDO if you root-enumerate this driver.
-	//
-	previousSp = ((PIO_STACK_LOCATION)((UCHAR *)(IrpStack)+
-		sizeof(IO_STACK_LOCATION)));
-
-	if (previousSp->DeviceObject == DeviceObject)
-	{
-		//
-		// Filtering out this basically prevents the Found New Hardware
-		// popup for the root-enumerated Cyapa on reboot.
-		//
-		status = Irp->IoStatus.Status;
-	}
-	else
-	{
-		switch (IrpStack->Parameters.QueryId.IdType)
-		{
-		case BusQueryDeviceID:
-		case BusQueryHardwareIDs:
-			//
-			// HIDClass is asking for child deviceid & hardwareids.
-			// Let us just make up some id for our child device.
-			//
-			buffer = (PWCHAR)ExAllocatePoolWithTag(
-				NonPagedPool,
-				CYAPA_HARDWARE_IDS_LENGTH,
-				CYAPA_POOL_TAG
-				);
-
-			if (buffer)
-			{
-				//
-				// Do the copy, store the buffer in the Irp
-				//
-				RtlCopyMemory(buffer,
-					CYAPA_HARDWARE_IDS,
-					CYAPA_HARDWARE_IDS_LENGTH
-					);
-
-				Irp->IoStatus.Information = (ULONG_PTR)buffer;
-				status = STATUS_SUCCESS;
-			}
-			else
-			{
-				//
-				//  No memory
-				//
-				status = STATUS_INSUFFICIENT_RESOURCES;
-			}
-
-			Irp->IoStatus.Status = status;
-			//
-			// We don't need to forward this to our bus. This query
-			// is for our child so we should complete it right here.
-			// fallthru.
-			//
-			IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
-			break;
-
-		default:
-			status = Irp->IoStatus.Status;
-			IoCompleteRequest(Irp, IO_NO_INCREMENT);
-			break;
-		}
-	}
-
-	CyapaPrint(DEBUG_LEVEL_VERBOSE, DBG_IOCTL,
-		"CyapaEvtWdmPreprocessMnQueryId Exit = 0x%x\n", status);
 
 	return status;
 }

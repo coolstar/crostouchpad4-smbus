@@ -121,12 +121,3 @@ union i2c_smbus_data {
 
 #define STATUS_FLAGS		(SMBHSTSTS_BYTE_DONE | SMBHSTSTS_INTR | \
 				 STATUS_ERROR_FLAGS)
-
-enum {
-	SMBusCallbackTypeNone,
-	SMBusCallbackTypeReadByte,
-	SMBusCallbackTypeWriteByte,
-	SMBusCallbackTypeReadBlock,
-	SMBusCallbackTypeWriteBlock,
-	SMBusCallbackTypeWriteBlockDone
-} SMBusCallbackType;
