@@ -83,6 +83,10 @@ VOID cyapa_set_full_power(
 ) {
 	UNREFERENCED_PARAMETER(userArg);
 
+	if (!success || readlen != 1) {
+		return;
+	}
+
 	uint8_t power_mode = CMD_POWER_MODE_FULL;
 
 	//DbgPrint("Read Power Mode: 0x%x\n", power);
@@ -299,7 +303,6 @@ Status
 --*/
 {
 	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
-	BOOLEAN fSpbResourceFound = FALSE;
 	NTSTATUS status = STATUS_INSUFFICIENT_RESOURCES;
 
 	UNREFERENCED_PARAMETER(FxResourcesRaw);
@@ -313,8 +316,6 @@ Status
 	for (ULONG i = 0; i < resourceCount; i++)
 	{
 		PCM_PARTIAL_RESOURCE_DESCRIPTOR pDescriptor;
-		UCHAR Class;
-		UCHAR Type;
 
 		pDescriptor = WdfCmResourceListGetDescriptor(
 			FxResourcesTranslated, i);
@@ -472,7 +473,7 @@ BOOLEAN OnInterruptIsr(
 	//DbgPrint("SMBus Interrupt Raised!\n");
 	pDevice->InterruptRaised = true;
 
-	int status = inb_p(SMBHSTSTS(pDevice));
+	uint8_t status = inb_p(SMBHSTSTS(pDevice));
 
 	if (pDevice->SMBusInternalCallback) {
 		SMBUS_INTERNAL_CALLBACK callback = pDevice->SMBusInternalCallback;
@@ -683,7 +684,6 @@ IN PWDFDEVICE_INIT DeviceInit
 	WDFDEVICE                     device;
 	WDF_INTERRUPT_CONFIG interruptConfig;
 	WDFQUEUE                      queue;
-	UCHAR                         minorFunction;
 	PCYAPA_CONTEXT               devContext;
 
 	UNREFERENCED_PARAMETER(Driver);
@@ -1314,7 +1314,6 @@ IN WDFREQUEST Request
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_REQUEST_PARAMETERS params;
 	PHID_XFER_PACKET transferPacket = NULL;
-	size_t bytesWritten = 0;
 
 	CyapaPrint(DEBUG_LEVEL_VERBOSE, DBG_IOCTL,
 		"CyapaWriteReport Entry\n");
