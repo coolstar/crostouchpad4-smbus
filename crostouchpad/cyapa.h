@@ -135,9 +135,9 @@ __packed(struct cyapa_cap{
 #define  CYAPA_DEV_BUSY         0x01
 
 #define CYAPA_FNGR_DATA_VALID   0x08
-#define CYAPA_FNGR_MIDDLE       0x04
-#define CYAPA_FNGR_RIGHT        0x02
-#define CYAPA_FNGR_LEFT         0x01
+#define CYAPA_FNGR_MIDDLE       0x04 << 3
+#define CYAPA_FNGR_RIGHT        0x02 << 3
+#define CYAPA_FNGR_LEFT         0x01 << 3
 #define CYAPA_FNGR_NUMFINGERS(c) (((c) >> 4) & 0x0F)
 
 #define CYAPA_TOUCH_X(regs, i)  ((((regs)->touch[i].xy_high << 4) & 0x0F00) | \

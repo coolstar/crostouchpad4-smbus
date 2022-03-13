@@ -135,6 +135,8 @@ VOID CyapaReadCapabilities(
 		pDevice->max_x,
 		pDevice->max_y);
 
+	pDevice->buttonCap = cap->buttons;
+
 	DbgPrint("Max X: %d Y: %d Phys X: %d Y: %d\n", pDevice->max_x, pDevice->max_y, pDevice->phy_x, pDevice->phy_y);
 
 	uint16_t max_x[] = { pDevice->max_x };
@@ -576,7 +578,14 @@ VOID CyapaReadWriteCallback(
 		}
 	}
 
-	pDevice->BUTTONPRESSED = ((regs->fngr & CYAPA_FNGR_LEFT) != 0);
+	uint8_t lbtnShift = 0;
+	if (pDevice->buttonCap & CYAPA_FNGR_RIGHT) {
+		lbtnShift = 1;
+	}
+
+	pDevice->BUTTONSPRESSED = 0;
+	pDevice->BUTTONSPRESSED |= (((regs->fngr & OP_DATA_LEFT_BTN) != 0) << lbtnShift);
+	pDevice->BUTTONSPRESSED |= (((regs->fngr & OP_DATA_RIGHT_BTN) != 0) << 2);
 
 	pDevice->TIMEINT += DIFF.QuadPart;
 
@@ -611,7 +620,7 @@ VOID CyapaReadWriteCallback(
 	}
 
 	report.ScanTime = pDevice->TIMEINT;
-	report.IsDepressed = pDevice->BUTTONPRESSED;
+	report.ButtonsPressed = pDevice->BUTTONSPRESSED;
 
 	report.ContactCount = count;
 

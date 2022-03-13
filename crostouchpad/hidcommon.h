@@ -58,7 +58,7 @@ typedef struct _CYAPA_MULTITOUCH_REPORT
 
 	BYTE	  ContactCount;
 
-	BYTE	  IsDepressed;
+	BYTE	  ButtonsPressed;
 } CyapaMultiTouchReport;
 #pragma pack()
 

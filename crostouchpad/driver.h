@@ -100,12 +100,16 @@
 	0x75, 0x08,                         /*    REPORT_SIZE (8)         */  \
 	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
 	0x05, 0x09,                         /*    USAGE_PAGE (Button)              */  \
-	0x09, 0x01,                         /*    USAGE_(Button 1)          */  \
-	0x25, 0x01,                         /*    LOGICAL_MAXIMUM (1)               */  \
 	0x75, 0x01,                         /*    REPORT_SIZE (1)                   */  \
 	0x95, 0x01,                         /*    REPORT_COUNT (1)                  */  \
+	0x25, 0x01,                         /*    LOGICAL_MAXIMUM (1)               */  \
+	0x09, 0x01,                         /*    USAGE_(Button 1)          */  \
 	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
-	0x95, 0x07,                          /*   REPORT_COUNT (7)                   */  \
+	0x09, 0x02,                         /*    USAGE_(Button 2)          */  \
+	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
+	0x09, 0x03,                         /*    USAGE_(Button 3)          */  \
+	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
+	0x95, 0x05,                          /*   REPORT_COUNT (5)                   */  \
 	0x81, 0x03,                         /*    INPUT (Cnst,Var,Abs)     */  \
 	0x05, 0x0d,                         /*    USAGE_PAGE (Digitizer)     */  \
 	0x85, REPORTID_MTOUCH,            /*   REPORT_ID (Feature)                   */  \
@@ -252,7 +256,9 @@ typedef struct _CYAPA_CONTEXT
 
 	USHORT PValue[15];
 
-	BOOLEAN BUTTONPRESSED;
+	uint8_t buttonCap;
+
+	BYTE BUTTONSPRESSED;
 
 	USHORT TIMEINT;
 
