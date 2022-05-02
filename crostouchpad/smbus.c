@@ -15,7 +15,7 @@ static void outb_p(unsigned char value, unsigned short int port) {
 }
 
 static void cyapa_set_slave_addr(PCYAPA_CONTEXT pDevice, uint8_t smbusread) {
-	outb_p(0xce + smbusread, SMBHSTADD(pDevice)); // 0x67
+	outb_p(((0x67 & 0x7f) << 1) | (smbusread & 0x01), SMBHSTADD(pDevice)); // 0x67
 }
 
 BOOLEAN cyapa_read_byte_callback(PCYAPA_CONTEXT pDevice, int status);
