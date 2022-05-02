@@ -278,233 +278,6 @@ NTSTATUS BOOTTRACKPAD(
 	return status;
 }
 
-NTSTATUS
-OnPrepareHardware(
-_In_  WDFDEVICE     FxDevice,
-_In_  WDFCMRESLIST  FxResourcesRaw,
-_In_  WDFCMRESLIST  FxResourcesTranslated
-)
-/*++
-
-Routine Description:
-
-This routine caches the SPB resource connection ID.
-
-Arguments:
-
-FxDevice - a handle to the framework device object
-FxResourcesRaw - list of translated hardware resources that
-the PnP manager has assigned to the device
-FxResourcesTranslated - list of raw hardware resources that
-the PnP manager has assigned to the device
-
-Return Value:
-
-Status
-
---*/
-{
-	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
-	NTSTATUS status = STATUS_INSUFFICIENT_RESOURCES;
-
-	UNREFERENCED_PARAMETER(FxResourcesRaw);
-
-	//
-	// Parse the peripheral's resources.
-	//
-
-	ULONG resourceCount = WdfCmResourceListGetCount(FxResourcesTranslated);
-
-	for (ULONG i = 0; i < resourceCount; i++)
-	{
-		PCM_PARTIAL_RESOURCE_DESCRIPTOR pDescriptor;
-
-		pDescriptor = WdfCmResourceListGetDescriptor(
-			FxResourcesTranslated, i);
-
-		switch (pDescriptor->Type)
-		{
-		case CmResourceTypePort:
-			pDevice->SMBusBase = pDescriptor->u.Port.Start.LowPart;
-			pDevice->SMBusLen = pDescriptor->u.Port.Length;
-
-			CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "crostrackpad-smbus: Got IO Port 0x%x (len 0x%x)\n", pDevice->SMBusBase, pDevice->SMBusLen);
-
-			status = STATUS_SUCCESS;
-			break;
-		default:
-			//
-			// Ignoring all other resource types.
-			//
-			break;
-		}
-	}
-
-	pDevice->SMBusLocked = false;
-	pDevice->SMBusUserCallback = NULL;
-	pDevice->SMBusInternalCallback = NULL;
-	return status;
-}
-
-NTSTATUS
-OnReleaseHardware(
-_In_  WDFDEVICE     FxDevice,
-_In_  WDFCMRESLIST  FxResourcesTranslated
-)
-/*++
-
-Routine Description:
-
-Arguments:
-
-FxDevice - a handle to the framework device object
-FxResourcesTranslated - list of raw hardware resources that
-the PnP manager has assigned to the device
-
-Return Value:
-
-Status
-
---*/
-{
-	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
-	NTSTATUS status = STATUS_SUCCESS;
-
-	UNREFERENCED_PARAMETER(FxResourcesTranslated);
-
-	return status;
-}
-
-NTSTATUS
-OnD0Entry(
-_In_  WDFDEVICE               FxDevice,
-_In_  WDF_POWER_DEVICE_STATE  FxPreviousState
-)
-/*++
-
-Routine Description:
-
-This routine allocates objects needed by the driver.
-
-Arguments:
-
-FxDevice - a handle to the framework device object
-FxPreviousState - previous power state
-
-Return Value:
-
-Status
-
---*/
-{
-	UNREFERENCED_PARAMETER(FxPreviousState);
-
-	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
-	NTSTATUS status = STATUS_SUCCESS;
-
-	WdfTimerStart(pDevice->Timer, WDF_REL_TIMEOUT_IN_MS(10));
-
-	for (int i = 0; i < 15; i++){
-		pDevice->Flags[i] = 0;
-	}
-
-	pDevice->TrackpadIsBooted = false;
-
-	BOOTTRACKPAD(pDevice);
-
-	pDevice->RegsSet = false;
-	pDevice->ConnectInterrupt = true;
-
-	return status;
-}
-
-NTSTATUS
-OnD0Exit(
-_In_  WDFDEVICE               FxDevice,
-_In_  WDF_POWER_DEVICE_STATE  FxPreviousState
-)
-/*++
-
-Routine Description:
-
-This routine destroys objects needed by the driver.
-
-Arguments:
-
-FxDevice - a handle to the framework device object
-FxPreviousState - previous power state
-
-Return Value:
-
-Status
-
---*/
-{
-	UNREFERENCED_PARAMETER(FxPreviousState);
-
-	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
-
-	WdfTimerStop(pDevice->Timer, TRUE);
-
-	pDevice->ConnectInterrupt = false;
-
-	/* Clear special mode bits */
-	outb_p(inb_p(SMBAUXCTL(pDevice)) &
-		~(SMBAUXCTL_CRC | SMBAUXCTL_E32B), SMBAUXCTL(pDevice));
-
-	return STATUS_SUCCESS;
-}
-
-BOOLEAN OnInterruptIsr(
-	WDFINTERRUPT Interrupt,
-	ULONG MessageID) {
-	UNREFERENCED_PARAMETER(MessageID);
-
-	WDFDEVICE Device = WdfInterruptGetDevice(Interrupt);
-	PCYAPA_CONTEXT pDevice = GetDeviceContext(Device);
-
-	if (!pDevice->ConnectInterrupt)
-		return false;
-
-	if (!pDevice->SMBusLocked)
-		return false;
-
-	if (pDevice->SMBusInternalCallback == NULL)
-		return false;
-
-	//DbgPrint("SMBus Interrupt Raised!\n");
-	pDevice->InterruptRaised = true;
-
-	uint8_t status = inb_p(SMBHSTSTS(pDevice));
-
-	if (pDevice->SMBusInternalCallback) {
-		SMBUS_INTERNAL_CALLBACK callback = pDevice->SMBusInternalCallback;
-		pDevice->SMBusInternalCallback = NULL;
-
-		BOOLEAN ret = callback(pDevice, status);
-		if (ret) {
-			return ret;
-		}
-		else {
-			status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
-			if (status) {
-				outb_p(status, SMBHSTSTS(pDevice));
-			}
-			return true;
-		}
-	}
-	else {
-		DbgPrint("Warning: No Internal Callback... Spurious interrupt?\n");
-	}
-
-	status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
-	if (status) {
-		outb_p(status, SMBHSTSTS(pDevice));
-	}
-
-	return true;
-}
-
 VOID CyapaReadWriteCallback(
 	IN PCYAPA_CONTEXT pDevice,
 	BOOLEAN success,
@@ -630,55 +403,350 @@ VOID CyapaReadWriteCallback(
 	pDevice->RegsSet = true;
 }
 
-VOID
-CyapaReadWriteWorkItem(
-	IN WDFWORKITEM  WorkItem
-	)
-{
-	WDFDEVICE Device = (WDFDEVICE)WdfWorkItemGetParentObject(WorkItem);
-	PCYAPA_CONTEXT pDevice = GetDeviceContext(Device);
+int CyapaArg2 = 1;
 
-	WdfObjectDelete(WorkItem);
+BOOLEAN
+CyapaInterrupt(
+	IN PCYAPA_CONTEXT pDevice
+) {
+	if (!pDevice) {
+		return false;
+	}
 
-	if (!pDevice->ConnectInterrupt)
-		return;
+	if (!pDevice->ConnectInterrupt) {
+		return false;
+	}
 
-	if (pDevice->max_x == 0)
-		return;
+	if (pDevice->max_x == 0) {
+		return false;
+	}
 
-	if (!pDevice->TrackpadIsBooted)
-		return;
+	if (!pDevice->TrackpadIsBooted) {
+		return false;
+	}
 
 	cyapa_read_block(pDevice, 0x81, CyapaReadWriteCallback, NULL);
+	return true;
 }
 
-void CyapaTimerFunc(_In_ WDFTIMER hTimer){
-	WDFDEVICE Device = (WDFDEVICE)WdfTimerGetParentObject(hTimer);
+VOID
+CyapaIntCallback(
+	IN PCYAPA_CONTEXT pDevice,
+	PCROSTPCALLBACK_PKT tpContext,
+	PVOID Argument2
+) {
+	if (Argument2 == &CyapaArg2) {
+		return;
+	}
+
+	if (!tpContext) {
+		return;
+	}
+
+	if (tpContext->signature != CrosTpSig) {
+		return;
+	}
+
+	if (tpContext->actionSource != CrosTpCallbackSourceInterrupt) {
+		return;
+	}
+
+	switch (tpContext->action) {
+	case CrosTPCallbackActionRegister:
+	{
+		tpContext->actionStatus = STATUS_SUCCESS;
+
+		RtlZeroMemory(&pDevice->CrosTpCallbackTempContext, sizeof(CROSTPCALLBACK_PKT));
+		pDevice->CrosTpCallbackTempContext.signature = CrosTpSig;
+		pDevice->CrosTpCallbackTempContext.action = CrosTPCallbackActionRegister;
+		pDevice->CrosTpCallbackTempContext.actionSource = CrosTpCallbackSourceTouchpad;
+		pDevice->CrosTpCallbackTempContext.actionParameters.registrationParameters.devContext = pDevice;
+		pDevice->CrosTpCallbackTempContext.actionParameters.registrationParameters.callbackFunction = CyapaInterrupt;
+		pDevice->CrosTpCallbackTempContext.actionStatus = STATUS_DEVICE_NOT_READY;
+		ExNotifyCallback(pDevice->CrosTpIntCallback, &pDevice->CrosTpCallbackTempContext, &CyapaArg2);
+	}
+	case CrosTPCallbackActionUnregister:
+	{
+		tpContext->actionStatus = STATUS_SUCCESS;
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+NTSTATUS
+OnPrepareHardware(
+_In_  WDFDEVICE     FxDevice,
+_In_  WDFCMRESLIST  FxResourcesRaw,
+_In_  WDFCMRESLIST  FxResourcesTranslated
+)
+/*++
+
+Routine Description:
+
+This routine caches the SPB resource connection ID.
+
+Arguments:
+
+FxDevice - a handle to the framework device object
+FxResourcesRaw - list of translated hardware resources that
+the PnP manager has assigned to the device
+FxResourcesTranslated - list of raw hardware resources that
+the PnP manager has assigned to the device
+
+Return Value:
+
+Status
+
+--*/
+{
+	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
+	NTSTATUS status = STATUS_INSUFFICIENT_RESOURCES;
+
+	UNREFERENCED_PARAMETER(FxResourcesRaw);
+
+	//
+	// Parse the peripheral's resources.
+	//
+
+	ULONG resourceCount = WdfCmResourceListGetCount(FxResourcesTranslated);
+
+	for (ULONG i = 0; i < resourceCount; i++)
+	{
+		PCM_PARTIAL_RESOURCE_DESCRIPTOR pDescriptor;
+
+		pDescriptor = WdfCmResourceListGetDescriptor(
+			FxResourcesTranslated, i);
+
+		switch (pDescriptor->Type)
+		{
+		case CmResourceTypePort:
+			pDevice->SMBusBase = pDescriptor->u.Port.Start.LowPart;
+			pDevice->SMBusLen = pDescriptor->u.Port.Length;
+
+			CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "crostrackpad-smbus: Got IO Port 0x%x (len 0x%x)\n", pDevice->SMBusBase, pDevice->SMBusLen);
+
+			status = STATUS_SUCCESS;
+			break;
+		default:
+			//
+			// Ignoring all other resource types.
+			//
+			break;
+		}
+	}
+
+	UNICODE_STRING CrosTpSMBusInterrupt;
+	RtlInitUnicodeString(&CrosTpSMBusInterrupt, L"\\CallBack\\CrosTpSMBusInterrupt");
+
+	OBJECT_ATTRIBUTES attributes;
+	InitializeObjectAttributes(&attributes,
+		&CrosTpSMBusInterrupt,
+		OBJ_KERNEL_HANDLE | OBJ_OPENIF | OBJ_CASE_INSENSITIVE | OBJ_PERMANENT,
+		NULL,
+		NULL
+	);
+
+	status = ExCreateCallback(&pDevice->CrosTpIntCallback, &attributes, TRUE, TRUE);
+	if (!NT_SUCCESS(status)) {
+
+		return status;
+	}
+	pDevice->CrosTpCallbackObj = ExRegisterCallback(pDevice->CrosTpIntCallback,
+		CyapaIntCallback,
+		pDevice
+	);
+	if (!pDevice->CrosTpCallbackObj) {
+
+		return STATUS_NO_CALLBACK_ACTIVE;
+	}
+
+	RtlZeroMemory(&pDevice->CrosTpCallbackTempContext, sizeof(CROSTPCALLBACK_PKT));
+	pDevice->CrosTpCallbackTempContext.signature = CrosTpSig;
+	pDevice->CrosTpCallbackTempContext.action = CrosTPCallbackActionRegister;
+	pDevice->CrosTpCallbackTempContext.actionSource = CrosTpCallbackSourceTouchpad;
+	pDevice->CrosTpCallbackTempContext.actionParameters.registrationParameters.devContext = pDevice;
+	pDevice->CrosTpCallbackTempContext.actionParameters.registrationParameters.callbackFunction = CyapaInterrupt;
+	pDevice->CrosTpCallbackTempContext.actionStatus = STATUS_DEVICE_NOT_READY;
+	ExNotifyCallback(pDevice->CrosTpIntCallback, &pDevice->CrosTpCallbackTempContext, &CyapaArg2);
+
+	pDevice->SMBusLocked = false;
+	pDevice->SMBusUserCallback = NULL;
+	pDevice->SMBusInternalCallback = NULL;
+	return status;
+}
+
+NTSTATUS
+OnReleaseHardware(
+_In_  WDFDEVICE     FxDevice,
+_In_  WDFCMRESLIST  FxResourcesTranslated
+)
+/*++
+
+Routine Description:
+
+Arguments:
+
+FxDevice - a handle to the framework device object
+FxResourcesTranslated - list of raw hardware resources that
+the PnP manager has assigned to the device
+
+Return Value:
+
+Status
+
+--*/
+{
+	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
+	NTSTATUS status = STATUS_SUCCESS;
+
+	UNREFERENCED_PARAMETER(FxResourcesTranslated);
+
+	if (pDevice->CrosTpCallbackObj) {
+		RtlZeroMemory(&pDevice->CrosTpCallbackTempContext, sizeof(CROSTPCALLBACK_PKT));
+		pDevice->CrosTpCallbackTempContext.signature = CrosTpSig;
+		pDevice->CrosTpCallbackTempContext.action = CrosTPCallbackActionUnregister;
+		pDevice->CrosTpCallbackTempContext.actionSource = CrosTpCallbackSourceTouchpad;
+		pDevice->CrosTpCallbackTempContext.actionStatus = STATUS_DEVICE_NOT_READY;
+		ExNotifyCallback(pDevice->CrosTpIntCallback, &pDevice->CrosTpCallbackTempContext, &CyapaArg2); //Notify one last time before unregistration
+
+		ExUnregisterCallback(pDevice->CrosTpCallbackObj);
+		pDevice->CrosTpCallbackObj = NULL;
+	}
+
+	if (pDevice->CrosTpIntCallback) {
+		ObDereferenceObject(pDevice->CrosTpIntCallback);
+		pDevice->CrosTpIntCallback = NULL;
+	}
+
+	return status;
+}
+
+NTSTATUS
+OnD0Entry(
+_In_  WDFDEVICE               FxDevice,
+_In_  WDF_POWER_DEVICE_STATE  FxPreviousState
+)
+/*++
+
+Routine Description:
+
+This routine allocates objects needed by the driver.
+
+Arguments:
+
+FxDevice - a handle to the framework device object
+FxPreviousState - previous power state
+
+Return Value:
+
+Status
+
+--*/
+{
+	UNREFERENCED_PARAMETER(FxPreviousState);
+
+	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
+	NTSTATUS status = STATUS_SUCCESS;
+
+	for (int i = 0; i < 15; i++){
+		pDevice->Flags[i] = 0;
+	}
+
+	pDevice->TrackpadIsBooted = false;
+
+	BOOTTRACKPAD(pDevice);
+
+	pDevice->RegsSet = false;
+	pDevice->ConnectInterrupt = true;
+
+	return status;
+}
+
+NTSTATUS
+OnD0Exit(
+_In_  WDFDEVICE               FxDevice,
+_In_  WDF_POWER_DEVICE_STATE  FxPreviousState
+)
+/*++
+
+Routine Description:
+
+This routine destroys objects needed by the driver.
+
+Arguments:
+
+FxDevice - a handle to the framework device object
+FxPreviousState - previous power state
+
+Return Value:
+
+Status
+
+--*/
+{
+	UNREFERENCED_PARAMETER(FxPreviousState);
+
+	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
+
+	pDevice->ConnectInterrupt = false;
+
+	/* Clear special mode bits */
+	outb_p(inb_p(SMBAUXCTL(pDevice)) &
+		~(SMBAUXCTL_CRC | SMBAUXCTL_E32B), SMBAUXCTL(pDevice));
+
+	return STATUS_SUCCESS;
+}
+
+BOOLEAN OnInterruptIsr(
+	WDFINTERRUPT Interrupt,
+	ULONG MessageID) {
+	UNREFERENCED_PARAMETER(MessageID);
+
+	WDFDEVICE Device = WdfInterruptGetDevice(Interrupt);
 	PCYAPA_CONTEXT pDevice = GetDeviceContext(Device);
 
 	if (!pDevice->ConnectInterrupt)
-		return;
+		return false;
 
-	/*if (!pDevice->RegsSet)
-		return;*/
+	if (!pDevice->SMBusLocked)
+		return false;
 
-	PCYAPA_CONTEXT context;
-	WDF_OBJECT_ATTRIBUTES attributes;
-	WDF_WORKITEM_CONFIG workitemConfig;
-	WDFWORKITEM hWorkItem;
+	if (pDevice->SMBusInternalCallback == NULL)
+		return false;
 
-	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-	WDF_OBJECT_ATTRIBUTES_SET_CONTEXT_TYPE(&attributes, CYAPA_CONTEXT);
-	attributes.ParentObject = Device;
-	WDF_WORKITEM_CONFIG_INIT(&workitemConfig, CyapaReadWriteWorkItem);
+	//DbgPrint("SMBus Interrupt Raised!\n");
+	pDevice->InterruptRaised = true;
 
-	WdfWorkItemCreate(&workitemConfig,
-		&attributes,
-		&hWorkItem);
+	uint8_t status = inb_p(SMBHSTSTS(pDevice));
 
-	WdfWorkItemEnqueue(hWorkItem);
+	if (pDevice->SMBusInternalCallback) {
+		SMBUS_INTERNAL_CALLBACK callback = pDevice->SMBusInternalCallback;
+		pDevice->SMBusInternalCallback = NULL;
 
-	return;
+		BOOLEAN ret = callback(pDevice, status);
+		if (ret) {
+			return ret;
+		}
+		else {
+			status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
+			if (status) {
+				outb_p(status, SMBHSTSTS(pDevice));
+			}
+			return true;
+		}
+	}
+	else {
+		DbgPrint("Warning: No Internal Callback... Spurious interrupt?\n");
+	}
+
+	status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
+	if (status) {
+		outb_p(status, SMBHSTSTS(pDevice));
+	}
+
+	return true;
 }
 
 NTSTATUS
@@ -807,21 +875,6 @@ IN PWDFDEVICE_INIT DeviceInit
 			"Error creating WDF interrupt object - %!STATUS!",
 			status);
 
-		return status;
-	}
-
-	WDF_TIMER_CONFIG              timerConfig;
-	WDFTIMER                      hTimer;
-
-	WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, CyapaTimerFunc, 10);
-
-	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-	attributes.ParentObject = device;
-	status = WdfTimerCreate(&timerConfig, &attributes, &hTimer);
-	devContext->Timer = hTimer;
-	if (!NT_SUCCESS(status))
-	{
-		CyapaPrint(DEBUG_LEVEL_ERROR, DBG_PNP, "(%!FUNC!) WdfTimerCreate failed status:%!STATUS!\n", status);
 		return status;
 	}
 

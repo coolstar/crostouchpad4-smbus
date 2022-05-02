@@ -200,6 +200,36 @@ CONST HID_DESCRIPTOR DefaultHidDescriptor = {
 #define true 1
 #define false 0
 
+#define CrosTpSig 'ptyC'
+
+typedef enum {
+	CrosTpCallbackSourceTouchpad = 0,
+	CrosTpCallbackSourceInterrupt = 1
+} CrosTpCallbackSource;
+
+typedef enum {
+	CrosTPCallbackActionRegister = 0,
+	CrosTPCallbackActionUnregister = 1
+} CrosTPCallbackAction;
+
+typedef BOOLEAN(*CrosTPInt_Callback)(PVOID devContext);
+
+typedef struct _CROSTPCALLBACK_PKT
+{
+	UINT32 signature;
+
+	CrosTPCallbackAction action;
+	CrosTpCallbackSource actionSource;
+	NTSTATUS actionStatus;
+
+	union {
+		struct {
+			PVOID devContext;
+			CrosTPInt_Callback callbackFunction;
+		} registrationParameters;
+	} actionParameters;
+} CROSTPCALLBACK_PKT, * PCROSTPCALLBACK_PKT;
+
 struct _CYAPA_CONTEXT;
 
 typedef BOOLEAN(*SMBUS_INTERNAL_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, int status);
@@ -240,13 +270,15 @@ typedef struct _CYAPA_CONTEXT
 
 	WDFINTERRUPT Interrupt;
 
+	PCALLBACK_OBJECT CrosTpIntCallback;
+	PVOID CrosTpCallbackObj;
+	CROSTPCALLBACK_PKT CrosTpCallbackTempContext;
+
 	BOOLEAN ConnectInterrupt;
 
 	BOOLEAN InterruptRaised;
 
 	BOOLEAN RegsSet;
-
-	WDFTIMER Timer;
 
 	uint8_t      Flags[15];
 

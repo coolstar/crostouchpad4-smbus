@@ -252,7 +252,7 @@ uint8_t cyapa_write_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t *buf, uin
 	outb_p(inb_p(SMBAUXCTL(pDevice)) & (~SMBAUXCTL_CRC),
 		SMBAUXCTL(pDevice));
 
-	uint8_t hostc;
+	uint8_t hostc = 0;
 	pDevice->BusInterface.GetBusData(
 		pDevice->BusInterface.Context,
 		PCI_WHICHSPACE_CONFIG, //READ config
