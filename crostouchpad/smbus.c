@@ -2,6 +2,9 @@
 #include <initguid.h>
 #include <wdmguid.h>
 
+static ULONG CyapaDebugLevel = 100;
+static ULONG CyapaDebugCatagories = DBG_INIT || DBG_PNP || DBG_IOCTL;
+
 static unsigned char inb_p(unsigned short int port) {
 	unsigned char value = __inbyte(port);
 	return value;
