@@ -129,8 +129,6 @@ Status
 	for (ULONG i = 0; i < resourceCount; i++)
 	{
 		PCM_PARTIAL_RESOURCE_DESCRIPTOR pDescriptor;
-		UCHAR Class;
-		UCHAR Type;
 
 		pDescriptor = WdfCmResourceListGetDescriptor(
 			FxResourcesTranslated, i);
@@ -320,7 +318,6 @@ IN PWDFDEVICE_INIT DeviceInit
 	WDFDEVICE                     device;
 	WDF_INTERRUPT_CONFIG interruptConfig;
 	WDFQUEUE                      queue;
-	UCHAR                         minorFunction;
 	PCROSTPINT_CONTEXT               devContext;
 
 	UNREFERENCED_PARAMETER(Driver);
