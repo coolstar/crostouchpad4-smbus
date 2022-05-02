@@ -18,7 +18,7 @@ static void cyapa_set_slave_addr(PCYAPA_CONTEXT pDevice, uint8_t smbusread) {
 	outb_p(((0x67 & 0x7f) << 1) | (smbusread & 0x01), SMBHSTADD(pDevice)); // 0x67
 }
 
-BOOLEAN cyapa_read_byte_callback(PCYAPA_CONTEXT pDevice, int status);
+BOOLEAN cyapa_read_byte_callback(PCYAPA_CONTEXT pDevice, uint8_t status);
 uint32_t cyapa_read_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBACK callback, PVOID arg) {
 	if (pDevice->SMBusLocked) {
 		return 1;
@@ -34,7 +34,7 @@ uint32_t cyapa_read_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBAC
 		SMBAUXCTL(pDevice));
 
 	//check if ready
-	int status = inb_p(SMBHSTSTS(pDevice));
+	uint8_t status = inb_p(SMBHSTSTS(pDevice));
 	if (status & SMBHSTSTS_HOST_BUSY) {
 		DbgPrint("SMBus is Busy! Can't use it :(\n");
 		return 1;
@@ -50,7 +50,7 @@ uint32_t cyapa_read_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBAC
 	return 0;
 }
 
-BOOLEAN cyapa_read_byte_callback(PCYAPA_CONTEXT pDevice, int status) {
+BOOLEAN cyapa_read_byte_callback(PCYAPA_CONTEXT pDevice, uint8_t status) {
 	status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
 	if (status) {
 		outb_p(status, SMBHSTSTS(pDevice));
@@ -72,7 +72,7 @@ BOOLEAN cyapa_read_byte_callback(PCYAPA_CONTEXT pDevice, int status) {
 	return true;
 }
 
-BOOLEAN cyapa_write_byte_callback(PCYAPA_CONTEXT pDevice, int status);
+BOOLEAN cyapa_write_byte_callback(PCYAPA_CONTEXT pDevice, uint8_t status);
 uint32_t cyapa_write_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t value, SMBUS_USER_CALLBACK callback, PVOID arg) {
 	if (pDevice->SMBusLocked) {
 		return 1;
@@ -89,7 +89,7 @@ uint32_t cyapa_write_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t value, SM
 		SMBAUXCTL(pDevice));
 
 	//check if ready
-	int status = inb_p(SMBHSTSTS(pDevice));
+	uint8_t status = inb_p(SMBHSTSTS(pDevice));
 	if (status & SMBHSTSTS_HOST_BUSY) {
 		DbgPrint("SMBus is Busy! Can't use it :(\n");
 		return 1;
@@ -104,7 +104,7 @@ uint32_t cyapa_write_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t value, SM
 	return 0;
 }
 
-BOOLEAN cyapa_write_byte_callback(PCYAPA_CONTEXT pDevice, int status) {
+BOOLEAN cyapa_write_byte_callback(PCYAPA_CONTEXT pDevice, uint8_t status) {
 	status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
 	if (status) {
 		outb_p(status, SMBHSTSTS(pDevice));
@@ -124,7 +124,7 @@ BOOLEAN cyapa_write_byte_callback(PCYAPA_CONTEXT pDevice, int status) {
 	return true;
 }
 
-BOOLEAN cyapa_read_block_callback(PCYAPA_CONTEXT pDevice, int status);
+BOOLEAN cyapa_read_block_callback(PCYAPA_CONTEXT pDevice, uint8_t status);
 uint32_t cyapa_read_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBACK callback, PVOID arg) {
 	if (pDevice->SMBusLocked) {
 		return 1;
@@ -154,7 +154,7 @@ uint32_t cyapa_read_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBA
 	inb_p(SMBHSTCNT(pDevice)); /* reset the data buffer index */
 
 	//check if ready
-	int status = inb_p(SMBHSTSTS(pDevice));
+	uint8_t status = inb_p(SMBHSTSTS(pDevice));
 	if (status & SMBHSTSTS_HOST_BUSY) {
 		DbgPrint("SMBus is Busy! Can't use it :(\n");
 		return 1;
@@ -170,7 +170,7 @@ uint32_t cyapa_read_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBA
 	return 0;
 }
 
-BOOLEAN cyapa_read_block_callback(PCYAPA_CONTEXT pDevice, int status) {
+BOOLEAN cyapa_read_block_callback(PCYAPA_CONTEXT pDevice, uint8_t status) {
 	CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "SMB Read Status: 0x%x\n", status);
 	status &= SMBHSTSTS_INTR | STATUS_ERROR_FLAGS;
 	if (status) {
@@ -219,8 +219,8 @@ BOOLEAN cyapa_read_block_callback(PCYAPA_CONTEXT pDevice, int status) {
 	return TRUE;
 }
 
-BOOLEAN cyapa_write_block_callback(PCYAPA_CONTEXT pDevice, int status);
-BOOLEAN cyapa_write_block_callback_done(PCYAPA_CONTEXT pDevice, int status);
+BOOLEAN cyapa_write_block_callback(PCYAPA_CONTEXT pDevice, uint8_t status);
+BOOLEAN cyapa_write_block_callback_done(PCYAPA_CONTEXT pDevice, uint8_t status);
 
 uint8_t cyapa_write_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t *buf, uint8_t len, SMBUS_USER_CALLBACK callback, PVOID arg) {
 	if (pDevice->SMBusLocked) {
@@ -274,7 +274,7 @@ uint8_t cyapa_write_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t *buf, uin
 		1); // set I2C_EN
 
 	//check if ready
-	int status = inb_p(SMBHSTSTS(pDevice));
+	uint8_t status = inb_p(SMBHSTSTS(pDevice));
 	if (status & SMBHSTSTS_HOST_BUSY) {
 		DbgPrint("SMBus is Busy! Can't use it :(\n");
 		goto exit;
@@ -308,7 +308,7 @@ exit:
 	return 1;
 }
 
-BOOLEAN cyapa_write_block_callback_internal(PCYAPA_CONTEXT pDevice, int status, BOOLEAN done) {
+BOOLEAN cyapa_write_block_callback_internal(PCYAPA_CONTEXT pDevice, uint8_t status, BOOLEAN done) {
 	CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "SMB Write Done: %d, Status: 0x%x\n", done, status);
 	if (!done && status & SMBHSTSTS_BYTE_DONE) {
 		pDevice->SMBusBlockWriteIdx++;
@@ -364,10 +364,10 @@ BOOLEAN cyapa_write_block_callback_internal(PCYAPA_CONTEXT pDevice, int status, 
 	return FALSE;
 }
 
-BOOLEAN cyapa_write_block_callback(PCYAPA_CONTEXT pDevice, int status) {
+BOOLEAN cyapa_write_block_callback(PCYAPA_CONTEXT pDevice, uint8_t status) {
 	return cyapa_write_block_callback_internal(pDevice, status, FALSE);
 }
 
-BOOLEAN cyapa_write_block_callback_done(PCYAPA_CONTEXT pDevice, int status) {
+BOOLEAN cyapa_write_block_callback_done(PCYAPA_CONTEXT pDevice, uint8_t status) {
 	return cyapa_write_block_callback_internal(pDevice, status, TRUE);
 }

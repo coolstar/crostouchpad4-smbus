@@ -232,7 +232,7 @@ typedef struct _CROSTPCALLBACK_PKT
 
 struct _CYAPA_CONTEXT;
 
-typedef BOOLEAN(*SMBUS_INTERNAL_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, int status);
+typedef BOOLEAN(*SMBUS_INTERNAL_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, uint8_t status);
 typedef void (*SMBUS_USER_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, BOOLEAN success, void *readbuf, int readlen, PVOID userArg);
 
 
