@@ -413,6 +413,23 @@ IN PWDFDEVICE_INIT DeviceInit
 		return status;
 	}
 
+	WDF_DEVICE_POWER_POLICY_WAKE_SETTINGS wakeSettings;
+	WDF_DEVICE_POWER_POLICY_WAKE_SETTINGS_INIT(&wakeSettings);
+	wakeSettings.DxState = PowerDeviceD3;
+	wakeSettings.UserControlOfWakeSettings = WakeAllowUserControl;
+	wakeSettings.Enabled = WdfTrue;
+
+	status = WdfDeviceAssignSxWakeSettings(device, &wakeSettings);
+
+	if (!NT_SUCCESS(status))
+	{
+		CrosTpIntPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
+			"Error setting Wake Settings - %!STATUS!",
+			status);
+
+		return status;
+	}
+
 	return status;
 }
 
