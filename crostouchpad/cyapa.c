@@ -95,7 +95,7 @@ VOID cyapa_set_full_power(
 	power = (power & ~0xFC);
 	power |= power_mode & 0xFc;
 
-	cyapa_write_byte(pDevice, 0x2, power, NULL, NULL);
+	cyapa_write_byte(pDevice, SMBUS_ENCODE_RW(CYAPA_SMBUS_POWER_MODE, SMBUS_WRITE), power, NULL, NULL);
 }
 
 VOID CyapaReadCapabilities(
@@ -164,7 +164,7 @@ VOID CyapaReadCapabilities(
 	pDevice->phy_y_hid[0] = phy_y8bit[0];
 	pDevice->phy_y_hid[1] = phy_y8bit[1];
 
-	cyapa_read_byte(pDevice, 0x3, cyapa_set_full_power, NULL); //read power mode
+	cyapa_read_byte(pDevice, SMBUS_ENCODE_RW(CYAPA_SMBUS_POWER_MODE, SMBUS_READ), cyapa_set_full_power, NULL); //read power mode
 
 	pDevice->TrackpadIsBooted = TRUE;
 }
@@ -179,7 +179,7 @@ CyapaBootWorkItem(
 
 	WdfObjectDelete(WorkItem);
 
-	cyapa_read_block(pDevice, 0x99, CyapaReadCapabilities, NULL);
+	cyapa_read_block(pDevice, SMBUS_ENCODE_RW(CYAPA_SMBUS_GROUP_QUERY, SMBUS_READ), CyapaReadCapabilities, NULL);
 }
 
 void CyapaBootTimer(_In_ WDFTIMER hTimer) {
@@ -261,7 +261,7 @@ VOID BOOTTRACKPAD2(
 	}
 	else if (attempts < 2) {
 		attempts += 1;
-		cyapa_write_block(pDevice, CMD_BOOT_STATUS, (uint8_t*)bl_exit, sizeof(bl_exit), (SMBUS_USER_CALLBACK)BOOTTRACKPAD2, (PVOID)attempts);
+		cyapa_write_block(pDevice, SMBUS_ENCODE_RW(0, SMBUS_WRITE), (uint8_t*)bl_exit, sizeof(bl_exit), (SMBUS_USER_CALLBACK)BOOTTRACKPAD2, (PVOID)attempts);
 	}
 }
 
@@ -273,7 +273,7 @@ NTSTATUS BOOTTRACKPAD(
 
 	pDevice->TrackpadIsBooted = false;
 
-	cyapa_read_block(pDevice, 0xc1, (SMBUS_USER_CALLBACK)BOOTTRACKPAD2, (PVOID)TPAD_BOOT_CHECK);
+	cyapa_read_block(pDevice, SMBUS_ENCODE_RW(CYAPA_SMBUS_BL_STATUS, SMBUS_READ), (SMBUS_USER_CALLBACK)BOOTTRACKPAD2, (PVOID)TPAD_BOOT_CHECK);
 
 	return status;
 }
@@ -425,7 +425,7 @@ CyapaInterrupt(
 		return false;
 	}
 
-	cyapa_read_block(pDevice, 0x81, CyapaReadWriteCallback, NULL);
+	cyapa_read_block(pDevice, SMBUS_ENCODE_RW(CYAPA_SMBUS_GROUP_DATA, SMBUS_READ), CyapaReadWriteCallback, NULL);
 	return true;
 }
 
