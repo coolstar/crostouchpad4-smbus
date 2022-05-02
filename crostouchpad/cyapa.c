@@ -329,7 +329,7 @@ VOID CyapaReadWriteCallback(
 		p[a] = rawp;
 	}
 	for (int i = 0; i < 15; i++) {
-		if (pDevice->Flags[i] != 0 && pDevice->Flags != MXT_T9_RELEASE && x[i] == -1) {
+		if (pDevice->Flags[i] == MXT_T9_DETECT && x[i] == -1) {
 			pDevice->Flags[i] = MXT_T9_RELEASE;
 		}
 		if (x[i] != -1) {
@@ -344,9 +344,9 @@ VOID CyapaReadWriteCallback(
 			updateValues = true;
 
 			if (updateValues) {
-				pDevice->XValue[i] = x[i];
-				pDevice->YValue[i] = y[i];
-				pDevice->PValue[i] = p[i];
+				pDevice->XValue[i] = (USHORT)x[i];
+				pDevice->YValue[i] = (USHORT)y[i];
+				pDevice->PValue[i] = (USHORT)p[i];
 			}
 		}
 	}
@@ -360,11 +360,11 @@ VOID CyapaReadWriteCallback(
 	pDevice->BUTTONSPRESSED |= (((regs->fngr & OP_DATA_LEFT_BTN) != 0) << lbtnShift);
 	pDevice->BUTTONSPRESSED |= (((regs->fngr & OP_DATA_RIGHT_BTN) != 0) << 2);
 
-	pDevice->TIMEINT += DIFF.QuadPart;
+	pDevice->TIMEINT += (USHORT)DIFF.QuadPart;
 
 	pDevice->LastTime = CurrentTime;
 
-	int count = 0, i = 0;
+	BYTE count = 0, i = 0;
 	while (count < 5 && i < 15) {
 		if (pDevice->Flags[i] != 0) {
 			report.Touch[count].ContactID = i;
@@ -522,7 +522,7 @@ Status
 		switch (pDescriptor->Type)
 		{
 		case CmResourceTypePort:
-			pDevice->SMBusBase = pDescriptor->u.Port.Start.LowPart;
+			pDevice->SMBusBase = (unsigned short)pDescriptor->u.Port.Start.LowPart;
 			pDevice->SMBusLen = pDescriptor->u.Port.Length;
 
 			CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL, "crostrackpad-smbus: Got IO Port 0x%x (len 0x%x)\n", pDevice->SMBusBase, pDevice->SMBusLen);
@@ -1373,6 +1373,8 @@ IN PCYAPA_CONTEXT DevContext,
 IN WDFREQUEST Request
 )
 {
+	UNREFERENCED_PARAMETER(DevContext);
+
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_REQUEST_PARAMETERS params;
 	PHID_XFER_PACKET transferPacket = NULL;
@@ -1555,6 +1557,8 @@ IN WDFREQUEST Request,
 OUT BOOLEAN* CompleteRequest
 )
 {
+	UNREFERENCED_PARAMETER(CompleteRequest);
+
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_REQUEST_PARAMETERS params;
 	PHID_XFER_PACKET transferPacket = NULL;
@@ -1641,6 +1645,8 @@ IN WDFREQUEST Request,
 OUT BOOLEAN* CompleteRequest
 )
 {
+	UNREFERENCED_PARAMETER(CompleteRequest);
+
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_REQUEST_PARAMETERS params;
 	PHID_XFER_PACKET transferPacket = NULL;
