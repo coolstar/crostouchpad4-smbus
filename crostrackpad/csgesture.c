@@ -620,8 +620,10 @@ void ProcessGesture(PCYAPA_CONTEXT pDevice, struct csgesture_softc* sc) {
 	int abovethreshold = 0;
 	int recentlyadded = 0;
 	int lastrecentlyadded = -1;
-	int iToUse[3] = { -1,-1,-1 };
+	int iToUse[15];
 	int a = 0;
+
+	memset(iToUse, -1, sizeof(iToUse));
 
 	int nfingers = 0;
 	for (int i = 0; i < MAX_FINGERS; i++) {
