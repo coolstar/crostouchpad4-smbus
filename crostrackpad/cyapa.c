@@ -742,7 +742,6 @@ IN PWDFDEVICE_INIT DeviceInit
 		&interruptConfig,
 		OnInterruptIsr,
 		NULL);
-	interruptConfig.PassiveHandling = TRUE;
 
 	status = WdfInterruptCreate(
 		device,
