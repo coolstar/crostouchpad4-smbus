@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.7.34221.43
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "crostouchpad", "crostouchpad\crostouchpad.vcxproj", "{B3E71397-9BE4-492B-AAED-4D056E59CB1F}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "crostrackpad", "crostrackpad\crostrackpad.vcxproj", "{B3E71397-9BE4-492B-AAED-4D056E59CB1F}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "crostouchpad Package", "crostouchpad Package\crostouchpad Package.vcxproj", "{EA676041-89D8-4ACF-A48B-F11CA9F5DD8B}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "crostrackpad Package", "crostrackpad Package\crostrackpad Package.vcxproj", "{EA676041-89D8-4ACF-A48B-F11CA9F5DD8B}"
 	ProjectSection(ProjectDependencies) = postProject
 		{B3E71397-9BE4-492B-AAED-4D056E59CB1F} = {B3E71397-9BE4-492B-AAED-4D056E59CB1F}
 	EndProjectSection

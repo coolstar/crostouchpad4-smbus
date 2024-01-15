@@ -4,7 +4,7 @@ Copyright (c) Microsoft Corporation All Rights Reserved
 
 Module Name:
 
-    crostouchpad4.rc
+    crostrackpad4.rc
 
 Abstract:
 
@@ -14,9 +14,9 @@ Abstract:
 
 #define VER_FILETYPE                VFT_DRV
 #define VER_FILESUBTYPE             VFT2_DRV_MOUSE
-#define VER_FILEDESCRIPTION_STR     "Chromebook Cypress SMBus Touchpad"
-#define VER_INTERNALNAME_STR        "crostouchpad4.sys"
-#define VER_ORIGINALFILENAME_STR    "crostouchpad4.sys"
+#define VER_FILEDESCRIPTION_STR     "Chromebook Cypress SMBus Trackpad"
+#define VER_INTERNALNAME_STR        "crostrackpad3.sys"
+#define VER_ORIGINALFILENAME_STR    "crostrackpad3.sys"
 
 #define VER_LEGALCOPYRIGHT_YEARS    "2023"
 #define VER_LEGALCOPYRIGHT_STR	    "Copyright (C) " VER_LEGALCOPYRIGHT_YEARS " CoolStar."

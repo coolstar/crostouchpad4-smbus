@@ -47,12 +47,12 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="crostouchpad.inf">
+    <Inf Include="crostrackpad.inf">
       <Filter>Driver Files</Filter>
     </Inf>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="crostouchpad4.rc">
+    <ResourceCompile Include="crostrackpad3.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
