@@ -3,8 +3,6 @@
 #include <initguid.h>
 #include <wdmguid.h>
 
-#define bool int
-
 static ULONG CyapaDebugLevel = 100;
 static ULONG CyapaDebugCatagories = DBG_INIT || DBG_PNP || DBG_IOCTL;
 
@@ -25,6 +23,9 @@ uint32_t cyapa_read_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBAC
 uint32_t cyapa_write_byte(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t value, SMBUS_USER_CALLBACK callback, PVOID arg);
 uint32_t cyapa_read_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, SMBUS_USER_CALLBACK callback, PVOID arg);
 uint8_t cyapa_write_block(PCYAPA_CONTEXT pDevice, uint8_t cmd, uint8_t *buf, uint8_t len, SMBUS_USER_CALLBACK callback, PVOID arg);
+void SetDefaultSettings(struct csgesture_softc* sc);
+void CyapaTimerFunc(_In_ WDFTIMER hTimer);
+void ProcessSetting(PCYAPA_CONTEXT pDevice, struct csgesture_softc* sc, int settingRegister, int settingValue);
 
 static int sqr(int num) {
 	return num * num;
@@ -111,58 +112,48 @@ VOID CyapaReadCapabilities(
 		return;
 	}
 
-	struct cyapa_cap* cap = (struct cyapa_cap*)readbuf;
-	if (strncmp((const char*)cap->prod_ida, "CYTRA", 5) != 0) {
-		DbgPrint("[cyapainit] Product ID \"%5.5s\" mismatch\n",
-			cap->prod_ida);
+	struct csgesture_softc* sc = &pDevice->sc;
+
+	if (!sc->infoSetup) {
+		struct cyapa_cap* cap = (struct cyapa_cap*)readbuf;
+		if (strncmp((const char*)cap->prod_ida, "CYTRA", 5) != 0) {
+			DbgPrint("[cyapainit] Product ID \"%5.5s\" mismatch\n",
+				cap->prod_ida);
+		}
+
+		sc->resx = ((cap->max_abs_xy_high << 4) & 0x0F00) |
+			cap->max_abs_x_low;
+		sc->resy = ((cap->max_abs_xy_high << 8) & 0x0F00) |
+			cap->max_abs_y_low;
+		sc->phyx = ((cap->phy_siz_xy_high << 4) & 0x0F00) |
+			cap->phy_siz_x_low;
+		sc->phyy = ((cap->phy_siz_xy_high << 8) & 0x0F00) |
+			cap->phy_siz_y_low;
+
+		DbgPrint("[cyapainit] %5.5s-%6.6s-%2.2s buttons=%c%c%c res=%dx%d\n",
+			cap->prod_ida, cap->prod_idb, cap->prod_idc,
+			((cap->buttons & CYAPA_FNGR_LEFT) ? 'L' : '-'),
+			((cap->buttons & CYAPA_FNGR_MIDDLE) ? 'M' : '-'),
+			((cap->buttons & CYAPA_FNGR_RIGHT) ? 'R' : '-'),
+			sc->resx,
+			sc->resy);
+
+		for (int i = 0; i < 5; i++) {
+			sc->product_id[i] = cap->prod_ida[i];
+		}
+		sc->product_id[5] = '-';
+		for (int i = 0; i < 6; i++) {
+			sc->product_id[i + 6] = cap->prod_idb[i];
+		}
+		sc->product_id[12] = '-';
+		for (int i = 0; i < 2; i++) {
+			sc->product_id[i + 13] = cap->prod_idc[i];
+		}
+		sc->product_id[15] = '\0';
+
+		RtlStringCbPrintfA(sc->firmware_version, sizeof(sc->firmware_version), "%d.%d", cap->fw_maj_ver, cap->fw_min_ver);
+		sc->infoSetup = true;
 	}
-
-	pDevice->max_x = ((cap->max_abs_xy_high << 4) & 0x0F00) |
-		cap->max_abs_x_low;
-	pDevice->max_y = ((cap->max_abs_xy_high << 8) & 0x0F00) |
-		cap->max_abs_y_low;
-
-	pDevice->phy_x = ((cap->phy_siz_xy_high << 4) & 0x0F00) |
-		cap->phy_siz_x_low;
-	pDevice->phy_y = ((cap->phy_siz_xy_high << 8) & 0x0F00) |
-		cap->phy_siz_y_low;
-
-	DbgPrint("[cyapainit] %5.5s-%6.6s-%2.2s buttons=%c%c%c res=%dx%d\n",
-		cap->prod_ida, cap->prod_idb, cap->prod_idc,
-		((cap->buttons & CYAPA_FNGR_LEFT) ? 'L' : '-'),
-		((cap->buttons & CYAPA_FNGR_MIDDLE) ? 'M' : '-'),
-		((cap->buttons & CYAPA_FNGR_RIGHT) ? 'R' : '-'),
-		pDevice->max_x,
-		pDevice->max_y);
-
-	pDevice->buttonCap = cap->buttons;
-
-	DbgPrint("Max X: %d Y: %d Phys X: %d Y: %d\n", pDevice->max_x, pDevice->max_y, pDevice->phy_x, pDevice->phy_y);
-
-	uint16_t max_x[] = { pDevice->max_x };
-	uint16_t max_y[] = { pDevice->max_y };
-
-	uint8_t* max_x8bit = (uint8_t*)max_x;
-	uint8_t* max_y8bit = (uint8_t*)max_y;
-
-	pDevice->max_x_hid[0] = max_x8bit[0];
-	pDevice->max_x_hid[1] = max_x8bit[1];
-
-	pDevice->max_y_hid[0] = max_y8bit[0];
-	pDevice->max_y_hid[1] = max_y8bit[1];
-
-
-	uint16_t phy_x[] = { pDevice->phy_x * 10 };
-	uint16_t phy_y[] = { pDevice->phy_y * 10 };
-
-	uint8_t* phy_x8bit = (uint8_t*)phy_x;
-	uint8_t* phy_y8bit = (uint8_t*)phy_y;
-
-	pDevice->phy_x_hid[0] = phy_x8bit[0];
-	pDevice->phy_x_hid[1] = phy_x8bit[1];
-
-	pDevice->phy_y_hid[0] = phy_y8bit[0];
-	pDevice->phy_y_hid[1] = phy_y8bit[1];
 
 	cyapa_read_byte(pDevice, SMBUS_ENCODE_RW(CYAPA_SMBUS_POWER_MODE, SMBUS_READ), cyapa_set_full_power, NULL); //read power mode
 
@@ -291,115 +282,9 @@ VOID CyapaReadWriteCallback(
 	}
 	//DbgPrint("Reading Multitouch Report!\n");
 
-	LARGE_INTEGER CurrentTime;
-
-	KeQuerySystemTime(&CurrentTime);
-
-	LARGE_INTEGER DIFF;
-
-	DIFF.QuadPart = 0;
-
-	if (pDevice->LastTime.QuadPart != 0)
-		DIFF.QuadPart = (CurrentTime.QuadPart - pDevice->LastTime.QuadPart) / 1000;
-
 	struct cyapa_regs* regs = (struct cyapa_regs*)readbuf;
 
-	struct _CYAPA_MULTITOUCH_REPORT report;
-	report.ReportID = REPORTID_MTOUCH;
-
-	int nfingers;
-
-	nfingers = CYAPA_FNGR_NUMFINGERS(regs->fngr);
-
-	int x[15];
-	int y[15];
-	int p[15];
-	for (int i = 0; i < 15; i++) {
-		x[i] = -1;
-		y[i] = -1;
-		p[i] = -1;
-	}
-	for (int i = 0; i < nfingers; i++) {
-		int a = regs->touch[i].id;
-		int rawx = CYAPA_TOUCH_X(regs, i);
-		int rawy = CYAPA_TOUCH_Y(regs, i);
-		int rawp = CYAPA_TOUCH_P(regs, i);
-		x[a] = rawx;
-		y[a] = rawy;
-		p[a] = rawp;
-	}
-	for (int i = 0; i < 15; i++) {
-		if (pDevice->Flags[i] == MXT_T9_DETECT && x[i] == -1) {
-			pDevice->Flags[i] = MXT_T9_RELEASE;
-		}
-		if (x[i] != -1) {
-			bool updateValues = false;
-
-			if (pDevice->Flags[i] == 0 || pDevice->Flags[i] == MXT_T9_RELEASE)
-				updateValues = true;
-
-			pDevice->Flags[i] = MXT_T9_DETECT;
-
-			//if (diffsig(x[i], y[i], pDevice->XValue[i], pDevice->YValue[i]) == 1)
-			updateValues = true;
-
-			if (updateValues) {
-				pDevice->XValue[i] = (USHORT)x[i];
-				pDevice->YValue[i] = (USHORT)y[i];
-				pDevice->PValue[i] = (USHORT)p[i];
-			}
-		}
-	}
-
-	uint8_t lbtnShift = 0;
-	if (pDevice->buttonCap & CYAPA_FNGR_RIGHT) {
-		lbtnShift = 1;
-	}
-
-	pDevice->BUTTONSPRESSED = 0;
-	pDevice->BUTTONSPRESSED |= (((regs->fngr & OP_DATA_LEFT_BTN) != 0) << lbtnShift);
-	pDevice->BUTTONSPRESSED |= (((regs->fngr & OP_DATA_RIGHT_BTN) != 0) << 2);
-
-	pDevice->TIMEINT += (USHORT)DIFF.QuadPart;
-
-	pDevice->LastTime = CurrentTime;
-
-	BYTE count = 0, i = 0;
-	while (count < 5 && i < 15) {
-		if (pDevice->Flags[i] != 0) {
-			report.Touch[count].ContactID = i;
-
-			report.Touch[count].XValue = pDevice->XValue[i];
-			report.Touch[count].YValue = pDevice->YValue[i];
-			report.Touch[count].Pressure = pDevice->PValue[i];
-
-			uint8_t flags = pDevice->Flags[i];
-			if (flags & MXT_T9_DETECT) {
-				report.Touch[count].Status = MULTI_CONFIDENCE_BIT | MULTI_TIPSWITCH_BIT;
-			}
-			else if (flags & MXT_T9_PRESS) {
-				report.Touch[count].Status = MULTI_CONFIDENCE_BIT | MULTI_TIPSWITCH_BIT;
-			}
-			else if (flags & MXT_T9_RELEASE) {
-				report.Touch[count].Status = MULTI_CONFIDENCE_BIT;
-				pDevice->Flags[i] = 0;
-			}
-			else
-				report.Touch[count].Status = 0;
-
-			count++;
-		}
-		i++;
-	}
-
-	report.ScanTime = pDevice->TIMEINT;
-	report.ButtonsPressed = pDevice->BUTTONSPRESSED;
-
-	report.ContactCount = count;
-
-	size_t bytesWritten;
-	CyapaProcessVendorReport(pDevice, &report, sizeof(report), &bytesWritten);
-
+	RtlCopyMemory(&pDevice->lastregs, regs, sizeof(pDevice->lastregs));
 	pDevice->RegsSet = true;
 }
 
@@ -414,10 +299,6 @@ CyapaInterrupt(
 	}
 
 	if (!pDevice->ConnectInterrupt) {
-		return false;
-	}
-
-	if (pDevice->max_x == 0) {
 		return false;
 	}
 
@@ -650,11 +531,9 @@ Status
 	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
 	NTSTATUS status = STATUS_SUCCESS;
 
-	for (int i = 0; i < 15; i++){
-		pDevice->Flags[i] = 0;
-	}
-
 	pDevice->TrackpadIsBooted = false;
+
+	WdfTimerStart(pDevice->Timer, WDF_REL_TIMEOUT_IN_MS(10));
 
 	BOOTTRACKPAD(pDevice);
 
@@ -689,6 +568,8 @@ Status
 	UNREFERENCED_PARAMETER(FxPreviousState);
 
 	PCYAPA_CONTEXT pDevice = GetDeviceContext(FxDevice);
+
+	WdfTimerStop(pDevice->Timer, TRUE);
 
 	pDevice->ConnectInterrupt = false;
 
@@ -878,9 +759,29 @@ IN PWDFDEVICE_INIT DeviceInit
 		return status;
 	}
 
+	WDF_TIMER_CONFIG              timerConfig;
+	WDFTIMER                      hTimer;
+
+	WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, CyapaTimerFunc, 10);
+
+	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+	attributes.ParentObject = device;
+	status = WdfTimerCreate(&timerConfig, &attributes, &hTimer);
+	devContext->Timer = hTimer;
+	if (!NT_SUCCESS(status))
+	{
+		CyapaPrint(DEBUG_LEVEL_ERROR, DBG_PNP, "(%!FUNC!) WdfTimerCreate failed status:%!STATUS!\n", status);
+		return status;
+	}
+
+	CyapaPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
+		"Success! 0x%x\n", status);
+
 	//
 	// Initialize DeviceMode
 	//
+
+	SetDefaultSettings(&devContext->sc);
 
 	devContext->DeviceMode = DEVICE_MODE_MOUSE;
 	devContext->FxDevice = device;
@@ -1130,55 +1031,10 @@ CyapaGetReportDescriptor(
 	ULONG_PTR           bytesToCopy;
 	WDFMEMORY           memory;
 
-	PCYAPA_CONTEXT devContext = GetDeviceContext(Device);
-
-	if (devContext->max_x == 0) {
-		devContext->lastRequest = Request;
-		WDF_TIMER_CONFIG              timerConfig;
-		WDFTIMER                      hTimer;
-		WDF_OBJECT_ATTRIBUTES         attributes;
-
-		WDF_TIMER_CONFIG_INIT(&timerConfig, CyapaDescriptorTimer);
-
-		WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-		attributes.ParentObject = Device;
-		status = WdfTimerCreate(&timerConfig, &attributes, &hTimer);
-
-		WdfTimerStart(hTimer, WDF_REL_TIMEOUT_IN_MS(200));
-		*CompleteRequest = FALSE;
-	}
-
 	UNREFERENCED_PARAMETER(Device);
 
 	CyapaPrint(DEBUG_LEVEL_VERBOSE, DBG_IOCTL,
 		"CyapaGetReportDescriptor Entry\n");
-
-#define MT_TOUCH_COLLECTION												\
-			MT_TOUCH_COLLECTION0 \
-			0x26, devContext->max_x_hid[0], devContext->max_x_hid[1],                   /*       LOGICAL_MAXIMUM (WIDTH)    */ \
-			0x46, devContext->phy_x_hid[0], devContext->phy_x_hid[1],                   /*       PHYSICAL_MAXIMUM (WIDTH)   */ \
-			MT_TOUCH_COLLECTION1 \
-			0x26, devContext->max_y_hid[0], devContext->max_y_hid[1],                   /*       LOGICAL_MAXIMUM (HEIGHT)    */ \
-			0x46, devContext->phy_y_hid[0], devContext->phy_y_hid[1],                   /*       PHYSICAL_MAXIMUM (HEIGHT)   */ \
-			MT_TOUCH_COLLECTION2
-
-	HID_REPORT_DESCRIPTOR ReportDescriptor[] = {
-		//
-		// Multitouch report starts here
-		//
-		//TOUCH PAD input TLC
-		0x05, 0x0d,                         // USAGE_PAGE (Digitizers)          
-		0x09, 0x05,                         // USAGE (Touch Pad)             
-		0xa1, 0x01,                         // COLLECTION (Application)         
-		0x85, REPORTID_MTOUCH,            //   REPORT_ID (Touch pad)              
-		0x09, 0x22,                         //   USAGE (Finger)                 
-		MT_TOUCH_COLLECTION
-		MT_TOUCH_COLLECTION
-		MT_TOUCH_COLLECTION
-		MT_TOUCH_COLLECTION
-		MT_TOUCH_COLLECTION
-		USAGE_PAGES
-	};
 
 	//
 	// This IOCTL is METHOD_NEITHER so WdfRequestRetrieveOutputMemory
@@ -1215,7 +1071,7 @@ CyapaGetReportDescriptor(
 
 	status = WdfMemoryCopyFromBuffer(memory,
 		0,
-		(PVOID)ReportDescriptor,
+		(PVOID)DefaultReportDescriptor,
 		bytesToCopy);
 	if (!NT_SUCCESS(status))
 	{
@@ -1378,6 +1234,8 @@ IN WDFREQUEST Request
 	NTSTATUS status = STATUS_SUCCESS;
 	WDF_REQUEST_PARAMETERS params;
 	PHID_XFER_PACKET transferPacket = NULL;
+	CyapaScrollControlReport* pScrollCtrlReport = NULL;
+	CyapaSettingsReport* pSettingsReport = NULL;
 
 	CyapaPrint(DEBUG_LEVEL_VERBOSE, DBG_IOCTL,
 		"CyapaWriteReport Entry\n");
@@ -1412,6 +1270,23 @@ IN WDFREQUEST Request
 
 			switch (transferPacket->reportId)
 			{
+			case REPORTID_SCROLLCTRL:
+
+				pScrollCtrlReport = (CyapaScrollControlReport*)transferPacket->reportBuffer;
+
+				if (pScrollCtrlReport->Flag == 1) {
+					DevContext->sc.scrollInertiaActive = 1;
+				}
+				else {
+					DevContext->sc.scrollInertiaActive = 0;
+				}
+
+				break;
+
+			case REPORTID_SETTINGS:
+				pSettingsReport = (CyapaSettingsReport*)transferPacket->reportBuffer;
+				ProcessSetting(DevContext, &DevContext->sc, pSettingsReport->SettingsRegister, pSettingsReport->SettingsValue);
+				break;
 			default:
 
 				CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL,
@@ -1684,35 +1559,6 @@ OUT BOOLEAN* CompleteRequest
 
 			switch (transferPacket->reportId)
 			{
-			case REPORTID_MTOUCH:
-			{
-
-				CyapaMaxCountReport* pReport = NULL;
-
-				if (transferPacket->reportBufferLen >= sizeof(CyapaMaxCountReport))
-				{
-					pReport = (CyapaMaxCountReport*)transferPacket->reportBuffer;
-
-					pReport->MaximumCount = MULTI_MAX_COUNT;
-
-					pReport->PadType = 0;
-
-					CyapaPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-						"CyapaGetFeature MaximumCount = 0x%x\n", MULTI_MAX_COUNT);
-				}
-				else
-				{
-					status = STATUS_INVALID_PARAMETER;
-
-					CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL,
-						"CyapaGetFeature Error transferPacket->reportBufferLen (%d) is different from sizeof(CyapaMaxCountReport) (%d)\n",
-						transferPacket->reportBufferLen,
-						sizeof(CyapaMaxCountReport));
-				}
-
-				break;
-			}
-
 			case REPORTID_FEATURE:
 			{
 
@@ -1739,44 +1585,6 @@ OUT BOOLEAN* CompleteRequest
 						sizeof(CyapaFeatureReport));
 				}
 
-				break;
-			}
-
-			case REPORTID_PTPHQA:
-			{
-				uint8_t PTPHQA_BLOB[] = { REPORTID_PTPHQA, 0xfc, 0x28, 0xfe, 0x84, 0x40, 0xcb, 0x9a, 0x87, 0x0d, 0xbe, 0x57, 0x3c, 0xb6, 0x70, 0x09, 0x88, 0x07,\
-					0x97, 0x2d, 0x2b, 0xe3, 0x38, 0x34, 0xb6, 0x6c, 0xed, 0xb0, 0xf7, 0xe5, 0x9c, 0xf6, 0xc2, 0x2e, 0x84,\
-					0x1b, 0xe8, 0xb4, 0x51, 0x78, 0x43, 0x1f, 0x28, 0x4b, 0x7c, 0x2d, 0x53, 0xaf, 0xfc, 0x47, 0x70, 0x1b,\
-					0x59, 0x6f, 0x74, 0x43, 0xc4, 0xf3, 0x47, 0x18, 0x53, 0x1a, 0xa2, 0xa1, 0x71, 0xc7, 0x95, 0x0e, 0x31,\
-					0x55, 0x21, 0xd3, 0xb5, 0x1e, 0xe9, 0x0c, 0xba, 0xec, 0xb8, 0x89, 0x19, 0x3e, 0xb3, 0xaf, 0x75, 0x81,\
-					0x9d, 0x53, 0xb9, 0x41, 0x57, 0xf4, 0x6d, 0x39, 0x25, 0x29, 0x7c, 0x87, 0xd9, 0xb4, 0x98, 0x45, 0x7d,\
-					0xa7, 0x26, 0x9c, 0x65, 0x3b, 0x85, 0x68, 0x89, 0xd7, 0x3b, 0xbd, 0xff, 0x14, 0x67, 0xf2, 0x2b, 0xf0,\
-					0x2a, 0x41, 0x54, 0xf0, 0xfd, 0x2c, 0x66, 0x7c, 0xf8, 0xc0, 0x8f, 0x33, 0x13, 0x03, 0xf1, 0xd3, 0xc1, 0x0b,\
-					0x89, 0xd9, 0x1b, 0x62, 0xcd, 0x51, 0xb7, 0x80, 0xb8, 0xaf, 0x3a, 0x10, 0xc1, 0x8a, 0x5b, 0xe8, 0x8a,\
-					0x56, 0xf0, 0x8c, 0xaa, 0xfa, 0x35, 0xe9, 0x42, 0xc4, 0xd8, 0x55, 0xc3, 0x38, 0xcc, 0x2b, 0x53, 0x5c,\
-					0x69, 0x52, 0xd5, 0xc8, 0x73, 0x02, 0x38, 0x7c, 0x73, 0xb6, 0x41, 0xe7, 0xff, 0x05, 0xd8, 0x2b, 0x79,\
-					0x9a, 0xe2, 0x34, 0x60, 0x8f, 0xa3, 0x32, 0x1f, 0x09, 0x78, 0x62, 0xbc, 0x80, 0xe3, 0x0f, 0xbd, 0x65,\
-					0x20, 0x08, 0x13, 0xc1, 0xe2, 0xee, 0x53, 0x2d, 0x86, 0x7e, 0xa7, 0x5a, 0xc5, 0xd3, 0x7d, 0x98, 0xbe,\
-					0x31, 0x48, 0x1f, 0xfb, 0xda, 0xaf, 0xa2, 0xa8, 0x6a, 0x89, 0xd6, 0xbf, 0xf2, 0xd3, 0x32, 0x2a, 0x9a,\
-					0xe4, 0xcf, 0x17, 0xb7, 0xb8, 0xf4, 0xe1, 0x33, 0x08, 0x24, 0x8b, 0xc4, 0x43, 0xa5, 0xe5, 0x24, 0xc2 };
-				if (transferPacket->reportBufferLen >= sizeof(PTPHQA_BLOB))
-				{
-					uint8_t *blobBuffer = (uint8_t*)transferPacket->reportBuffer;
-					for (int i = 0; i < sizeof(PTPHQA_BLOB); i++) {
-						blobBuffer[i] = PTPHQA_BLOB[i];
-					}
-					CyapaPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-						"CyapaGetFeature PHPHQA\n");
-				}
-				else
-				{
-					status = STATUS_INVALID_PARAMETER;
-
-					CyapaPrint(DEBUG_LEVEL_ERROR, DBG_IOCTL,
-						"CyapaGetFeature Error transferPacket->reportBufferLen (%d) is different from sizeof(PTPHEQ_BLOB) (%d)\n",
-						transferPacket->reportBufferLen,
-						sizeof(CyapaFeatureReport));
-				}
 				break;
 			}
 

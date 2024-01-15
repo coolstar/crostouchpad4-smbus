@@ -16,6 +16,8 @@
 #pragma warning(disable:4214)  // suppress bit field types other than int warning
 #include <hidport.h>
 
+#include <ntstrsafe.h>
+
 #include "hidcommon.h"
 #include "stdint.h"
 #include "smbus.h"
@@ -34,125 +36,6 @@
 #define NTDEVICE_NAME_STRING       L"\\Device\\CYAP0000"
 #define SYMBOLIC_NAME_STRING       L"\\DosDevices\\CYAP0000"
 
-#define MT_TOUCH_COLLECTION0                                                   \
-    0xa1, 0x02,                         /*   COLLECTION (Logical)		   */  \
-	0x15, 0x00,                         /*       LOGICAL_MINIMUM (0)       */  \
-	0x25, 0x01,                         /*       LOGICAL_MAXIMUM (1)       */  \
-	0x09, 0x47,                         /*       USAGE (Confidence)	       */  \
-	0x09, 0x42,                         /*       USAGE (Tip switch)        */  \
-	0x95, 0x02,                         /*       REPORT_COUNT (2)          */  \
-	0x75, 0x01,                         /*       REPORT_SIZE (1)           */  \
-	0x81, 0x02,                         /*       INPUT (Data,Var,Abs)      */  \
-	0x95, 0x06,                         /*       REPORT_COUNT (6)          */  \
-	0x81, 0x03,                         /*       INPUT (Cnst,Ary,Abs)      */  \
-	0x95, 0x01,                         /*       REPORT_COUNT (1)		   */  \
-	0x75, 0x04,                         /*       REPORT_SIZE (4)		   */  \
-	0x25, 0x10,                         /*       LOGICAL_MAXIMUM (16)	   */  \
-	0x09, 0x51,                         /*       USAGE (Contact Identifier)*/  \
-	0x81, 0x02,                         /*       INPUT (Data,Var,Abs)	   */  \
-	0x75, 0x01,                         /*       REPORT_SIZE (1)	       */  \
-	0x95, 0x04,                         /*       REPORT_COUNT (4)          */  \
-	0x81, 0x03,                         /*       INPUT (Cnst,Var,Abs)	   */  \
-	0x05, 0x01,                         /*       USAGE_PAGE (Generic Desk..*/  \
-	0x75, 0x10,                         /*       REPORT_SIZE (16)          */  \
-	0x55, 0x0e,                         /*       UNIT_EXPONENT (-2)        */  \
-	/*0x65, 0x13,                         /*       UNIT(Inch,EngLinear)      */  \
-	0x65, 0x11,                         /*       UNIT(Cm,SiLinear)      */  \
-	0x09, 0x30,                         /*       USAGE (X)                 */  \
-	0x15, 0x00,                         /*       LOGICAL_MINIMUM (0)	   */  \
-	0x35, 0x00,                         /*       PHYSICAL_MINIMUM (0)      */  \
-
-#define MT_TOUCH_COLLECTION1                                                   \
-	0x95, 0x01,                         /*       REPORT_COUNT (1)          */  \
-	0x81, 0x02,                         /*       INPUT (Data,Var,Abs)      */  \
-
-#define MT_TOUCH_COLLECTION2													\
-	0x09, 0x31,                         /*       USAGE (Y)                 */  \
-	0x81, 0x02,                         /*       INPUT (Data,Var,Abs)      */  \
-	0x05, 0x0d,                         /*       USAGE PAGE (Digitizers)   */ \
-	0x25, 0x28,							/*       LOGICAL_MAXIMUM (40)      */  \
-	0x09, 0x30,                         /*       USAGE (Tip Pressure)      */  \
-	0x81, 0x02,                         /*       INPUT (Data,Var,Abs)      */ \
-	0xc0,                               /*    END_COLLECTION */
-
-#define MT_REF_TOUCH_COLLECTION												\
-	MT_TOUCH_COLLECTION0 \
-	0x26, 0x66, 0x03,                   /*       LOGICAL_MAXIMUM (870)     */  \
-	0x46, 0x8E, 0x03,					/*       PHYSICAL_MAXIMUM (910)    */  \
-	MT_TOUCH_COLLECTION1 \
-	0x26, 0xE0, 0x01,                   /*       LOGICAL_MAXIMUM (480)     */  \
-	0x46, 0xFE, 0x01,					/*       PHYSICAL_MAXIMUM (550)    */  \
-	MT_TOUCH_COLLECTION2
-
-#define USAGE_PAGES \
-	0x55, 0x0C,                         /*    UNIT_EXPONENT (-4)         */  \
-	0x66, 0x01, 0x10,                   /*    UNIT (Seconds)             */  \
-	0x47, 0xff, 0xff, 0x00, 0x00,      /*     PHYSICAL_MAXIMUM (65535)   */  \
-	0x27, 0xff, 0xff, 0x00, 0x00,         /*  LOGICAL_MAXIMUM (65535)      */  \
-	0x75, 0x10,                           /*  REPORT_SIZE (16)                  */  \
-	0x95, 0x01,                           /*  REPORT_COUNT (1)      */  \
-	0x05, 0x0d,                         /*    USAGE_PAGE (Digitizers)     */  \
-	0x09, 0x56,                         /*    USAGE (Scan Time)         */  \
-	0x81, 0x02,                           /*  INPUT (Data,Var,Abs)              */  \
-	0x09, 0x54,                         /*    USAGE (Contact count)     */  \
-	0x25, 0x7f,                           /*  LOGICAL_MAXIMUM (127)      */  \
-	0x95, 0x01,                         /*    REPORT_COUNT (1)     */  \
-	0x75, 0x08,                         /*    REPORT_SIZE (8)         */  \
-	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
-	0x05, 0x09,                         /*    USAGE_PAGE (Button)              */  \
-	0x75, 0x01,                         /*    REPORT_SIZE (1)                   */  \
-	0x95, 0x01,                         /*    REPORT_COUNT (1)                  */  \
-	0x25, 0x01,                         /*    LOGICAL_MAXIMUM (1)               */  \
-	0x09, 0x01,                         /*    USAGE_(Button 1)          */  \
-	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
-	0x09, 0x02,                         /*    USAGE_(Button 2)          */  \
-	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
-	0x09, 0x03,                         /*    USAGE_(Button 3)          */  \
-	0x81, 0x02,                         /*    INPUT (Data,Var,Abs)     */  \
-	0x95, 0x05,                          /*   REPORT_COUNT (5)                   */  \
-	0x81, 0x03,                         /*    INPUT (Cnst,Var,Abs)     */  \
-	0x05, 0x0d,                         /*    USAGE_PAGE (Digitizer)     */  \
-	0x85, REPORTID_MTOUCH,            /*   REPORT_ID (Feature)                   */  \
-	0x09, 0x55,                         /*    USAGE (Contact Count Maximum)     */  \
-	0x09, 0x59,                         /*    USAGE (Pad TYpe)     */  \
-	0x75, 0x08,                         /*    REPORT_SIZE (8)      */  \
-	0x95, 0x02,                         /*    REPORT_COUNT (2)     */  \
-	0x25, 0x0f,                         /*    LOGICAL_MAXIMUM (15)     */  \
-	0xb1, 0x02,                         /*    FEATURE (Data,Var,Abs)     */  \
-	0x85, REPORTID_PTPHQA,				/*    Report ID (Certification)     */ \
-	0x09, 0xC5,							/*    Usage (0xC5)     */ \
-	0x15, 0x00,							/*    Logical Minimum (0)     */ \
-	0x26, 0xFF, 0x00,					/*    Logical Maximum (255)     */ \
-	0x75, 0x08,							/*    Report Size (8)     */ \
-	0x96, 0x00, 0x01,					/*    Report Count (256)     */ \
-	0xB1, 0x02,							/*    Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)     */ \
-	0xc0,                               /*   END_COLLECTION                      */  \
-	\
-	/*MOUSE TLC     */  \
-	0x05, 0x01,                         /* USAGE_PAGE (Generic Desktop)          */  \
-	0x09, 0x02,                         /* USAGE (Mouse)                         */  \
-	0xa1, 0x01,                         /* COLLECTION (Application)             */  \
-	0x85, REPORTID_MOUSE,               /*   REPORT_ID (Mouse)                   */  \
-	0x09, 0x01,                         /*   USAGE (Pointer)                     */  \
-	0xa1, 0x00,                         /*   COLLECTION (Physical)               */  \
-	0x05, 0x09,                         /*     USAGE_PAGE (Button)               */  \
-	0x19, 0x01,                         /*     USAGE_MINIMUM (Button 1)          */  \
-	0x29, 0x02,                         /*     USAGE_MAXIMUM (Button 2)          */  \
-	0x25, 0x01,                         /*     LOGICAL_MAXIMUM (1)               */  \
-	0x75, 0x01,                         /*     REPORT_SIZE (1)                   */  \
-	0x95, 0x02,                         /*     REPORT_COUNT (2)                  */  \
-	0x81, 0x02,                         /*     INPUT (Data,Var,Abs)              */  \
-	0x95, 0x06,                         /*     REPORT_COUNT (6)                  */  \
-	0x81, 0x03,                         /*     INPUT (Cnst,Var,Abs)              */  \
-	0x05, 0x01,                         /*     USAGE_PAGE (Generic Desktop)      */  \
-	0x09, 0x30,                         /*     USAGE (X)                         */  \
-	0x09, 0x31,                         /*     USAGE (Y)                         */  \
-	0x75, 0x10,                         /*     REPORT_SIZE (16)                  */  \
-	0x95, 0x02,                         /*     REPORT_COUNT (2)                  */  \
-	0x25, 0x0a,                          /*    LOGICAL_MAXIMUM (10)           */  \
-	0x81, 0x06,                         /*     INPUT (Data,Var,Rel)              */  \
-	0xc0,                               /*   END_COLLECTION                      */  \
-	0xc0,                                /*END_COLLECTION     */
 //
 // This is the default report descriptor for the Hid device provided
 // by the mini driver in response to IOCTL_HID_GET_REPORT_DESCRIPTOR.
@@ -163,20 +46,133 @@ typedef UCHAR HID_REPORT_DESCRIPTOR, *PHID_REPORT_DESCRIPTOR;
 #ifdef DESCRIPTOR_DEF
 HID_REPORT_DESCRIPTOR DefaultReportDescriptor[] = {
 	//
-	// Multitouch report starts here
+	// Relative mouse report starts here
 	//
-	//TOUCH PAD input TLC
-	0x05, 0x0d,                         // USAGE_PAGE (Digitizers)          
-	0x09, 0x05,                         // USAGE (Touch Pad)             
-	0xa1, 0x01,                         // COLLECTION (Application)         
-	0x85, REPORTID_MTOUCH,            //   REPORT_ID (Touch pad)              
-	0x09, 0x22,                         //   USAGE (Finger)                 
-	MT_REF_TOUCH_COLLECTION
-	MT_REF_TOUCH_COLLECTION
-	MT_REF_TOUCH_COLLECTION
-	MT_REF_TOUCH_COLLECTION
-	MT_REF_TOUCH_COLLECTION
-	USAGE_PAGES
+	0x05, 0x01,                         // USAGE_PAGE (Generic Desktop)
+	0x09, 0x02,                         // USAGE (Mouse)
+	0xa1, 0x01,                         // COLLECTION (Application)
+	0x85, REPORTID_RELATIVE_MOUSE,      //   REPORT_ID (Mouse)
+	0x09, 0x01,                         //   USAGE (Pointer)
+	0xa1, 0x00,                         //   COLLECTION (Physical)
+	0x05, 0x09,                         //     USAGE_PAGE (Button)
+	0x19, 0x01,                         //     USAGE_MINIMUM (Button 1)
+	0x29, 0x05,                         //     USAGE_MAXIMUM (Button 5)
+	0x15, 0x00,                         //     LOGICAL_MINIMUM (0)
+	0x25, 0x01,                         //     LOGICAL_MAXIMUM (1)
+	0x75, 0x01,                         //     REPORT_SIZE (1)
+	0x95, 0x05,                         //     REPORT_COUNT (5)
+	0x81, 0x02,                         //     INPUT (Data,Var,Abs)
+	0x95, 0x03,                         //     REPORT_COUNT (3)
+	0x81, 0x03,                         //     INPUT (Cnst,Var,Abs)
+	0x05, 0x01,                         //     USAGE_PAGE (Generic Desktop)
+	0x09, 0x30,                         //     USAGE (X)
+	0x09, 0x31,                         //     USAGE (Y)
+	0x15, 0x81,                         //     Logical Minimum (-127)
+	0x25, 0x7F,                         //     Logical Maximum (127)
+	0x75, 0x08,                         //     REPORT_SIZE (8)
+	0x95, 0x02,                         //     REPORT_COUNT (2)
+	0x81, 0x06,                         //     INPUT (Data,Var,Rel)
+	0x05, 0x01,                         //     Usage Page (Generic Desktop)
+	0x09, 0x38,                         //     Usage (Wheel)
+	0x15, 0x81,                         //     Logical Minimum (-127)
+	0x25, 0x7F,                         //     Logical Maximum (127)
+	0x75, 0x08,                         //     Report Size (8)
+	0x95, 0x01,                         //     Report Count (1)
+	0x81, 0x06,                         //     Input (Data, Variable, Relative)
+	// ------------------------------  Horizontal wheel
+	0x05, 0x0c,                         //     USAGE_PAGE (Consumer Devices)
+	0x0a, 0x38, 0x02,                   //     USAGE (AC Pan)
+	0x15, 0x81,                         //     LOGICAL_MINIMUM (-127)
+	0x25, 0x7f,                         //     LOGICAL_MAXIMUM (127)
+	0x75, 0x08,                         //     REPORT_SIZE (8)
+	0x95, 0x01,                         //     Report Count (1)
+	0x81, 0x06,                         //     Input (Data, Variable, Relative)
+	0xc0,                               //   END_COLLECTION
+	0xc0,                               // END_COLLECTION
+
+	0x06, 0x00, 0xff,                    // USAGE_PAGE (Vendor Defined Page 1)
+	0x09, 0x01,                          // USAGE (Vendor Usage 1)
+	0xa1, 0x01,                          // COLLECTION (Application)
+	0x85, REPORTID_SCROLL,              //   REPORT_ID (Scroll)
+	0x15, 0x00,                          //   LOGICAL_MINIMUM (0)
+	0x26, 0xff, 0x00,                    //   LOGICAL_MAXIMUM (256)
+	0x75, 0x08,                          //   REPORT_SIZE  (8)   - bits
+	0x95, 0x01,                          //   REPORT_COUNT (1)  - Bytes
+	0x09, 0x02,                          //   USAGE (Vendor Usage 1)
+	0x81, 0x02,                          //   INPUT (Data,Var,Abs)
+	0x15, 0x00,                          //   LOGICAL_MINIMUM (0)
+	0x26, 0xff, 0xff,                    //   LOGICAL_MAXIMUM (65535)
+	0x75, 0x10,                          //   REPORT_SIZE  (16)   - bits
+	0x95, 0x04,                          //   REPORT_COUNT (4)  - Bytes
+	0x09, 0x03,                          //   USAGE (Vendor Usage 2)
+	0x81, 0x02,                          //   INPUT (Data,Var,Abs)
+	0xc0,                                // END_COLLECTION
+
+	0x06, 0x00, 0xff,                    // USAGE_PAGE (Vendor Defined Page 1)
+	0x09, 0x02,                          // USAGE (Vendor Usage 2)
+	0xa1, 0x01,                          // COLLECTION (Application)
+	0x85, REPORTID_SCROLLCTRL,              //   REPORT_ID (Scroll Controls)
+	0x15, 0x00,                          //   LOGICAL_MINIMUM (0)
+	0x26, 0xff, 0x00,                    //   LOGICAL_MAXIMUM (256)
+	0x75, 0x08,                          //   REPORT_SIZE  (8)   - bits
+	0x95, 0x01,                          //   REPORT_COUNT (1)  - Bytes
+	0x09, 0x02,                          //   USAGE (Vendor Usage 1)
+	0x91, 0x02,                          //   OUTPUT (Data,Var,Abs)
+	0xc0,                                // END_COLLECTION
+
+	0x06, 0x00, 0xff,                    // USAGE_PAGE (Vendor Defined Page 1)
+	0x09, 0x03,                          // USAGE (Vendor Usage 3)
+	0xa1, 0x01,                          // COLLECTION (Application)
+	0x85, REPORTID_SETTINGS,              //   REPORT_ID (Settings)
+	0x15, 0x00,                          //   LOGICAL_MINIMUM (0)
+	0x26, 0xff, 0x00,                    //   LOGICAL_MAXIMUM (256)
+	0x75, 0x08,                          //   REPORT_SIZE  (8)   - bits
+	0x95, 0x01,                          //   REPORT_COUNT (1)  - Bytes
+	0x09, 0x02,                          //   USAGE (Vendor Usage 1)
+	0x91, 0x02,                          //   OUTPUT (Data,Var,Abs)
+	0x09, 0x03,                          //   USAGE (Vendor Usage 2)
+	0x91, 0x02,                          //   OUTPUT (Data,Var,Abs)
+	0x95, 0x40,                          //   REPORT_COUNT (64)  - Bytes
+	0x09, 0x02,                          //   USAGE (Vendor Usage 1)
+	0x81, 0x02,                          //   INPUT (Data,Var,Abs)
+	0xc0,                                // END_COLLECTION
+
+	//
+	// Keyboard report starts here
+	//    
+	0x05, 0x01,                         // USAGE_PAGE (Generic Desktop)
+	0x09, 0x06,                         // USAGE (Keyboard)
+	0xa1, 0x01,                         // COLLECTION (Application)
+	0x85, REPORTID_KEYBOARD,            //   REPORT_ID (Keyboard)    
+	0x05, 0x07,                         //   USAGE_PAGE (Keyboard)
+	0x19, 0xe0,                         //   USAGE_MINIMUM (Keyboard LeftControl)
+	0x29, 0xe7,                         //   USAGE_MAXIMUM (Keyboard Right GUI)
+	0x15, 0x00,                         //   LOGICAL_MINIMUM (0)
+	0x25, 0x01,                         //   LOGICAL_MAXIMUM (1)
+	0x75, 0x01,                         //   REPORT_SIZE (1)
+	0x95, 0x08,                         //   REPORT_COUNT (8)
+	0x81, 0x02,                         //   INPUT (Data,Var,Abs)
+	0x95, 0x01,                         //   REPORT_COUNT (1)
+	0x75, 0x08,                         //   REPORT_SIZE (8)
+	0x81, 0x03,                         //   INPUT (Cnst,Var,Abs)
+	0x95, 0x05,                         //   REPORT_COUNT (5)
+	0x75, 0x01,                         //   REPORT_SIZE (1)
+	0x05, 0x08,                         //   USAGE_PAGE (LEDs)
+	0x19, 0x01,                         //   USAGE_MINIMUM (Num Lock)
+	0x29, 0x05,                         //   USAGE_MAXIMUM (Kana)
+	0x91, 0x02,                         //   OUTPUT (Data,Var,Abs)
+	0x95, 0x01,                         //   REPORT_COUNT (1)
+	0x75, 0x03,                         //   REPORT_SIZE (3)
+	0x91, 0x03,                         //   OUTPUT (Cnst,Var,Abs)
+	0x95, 0x06,                         //   REPORT_COUNT (6)
+	0x75, 0x08,                         //   REPORT_SIZE (8)
+	0x15, 0x00,                         //   LOGICAL_MINIMUM (0)
+	0x25, 0x65,                         //   LOGICAL_MAXIMUM (101)
+	0x05, 0x07,                         //   USAGE_PAGE (Keyboard)
+	0x19, 0x00,                         //   USAGE_MINIMUM (Reserved (no event indicated))
+	0x29, 0x65,                         //   USAGE_MAXIMUM (Keyboard Application)
+	0x81, 0x00,                         //   INPUT (Data,Ary,Abs)
+	0xc0,                               // END_COLLECTION
 };
 
 
@@ -235,6 +231,7 @@ struct _CYAPA_CONTEXT;
 typedef BOOLEAN(*SMBUS_INTERNAL_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, uint8_t status);
 typedef void (*SMBUS_USER_CALLBACK)(struct _CYAPA_CONTEXT* pDevice, BOOLEAN success, void *readbuf, int readlen, PVOID userArg);
 
+#include "gesturerec.h"
 
 typedef struct _CYAPA_CONTEXT
 {
@@ -280,35 +277,13 @@ typedef struct _CYAPA_CONTEXT
 
 	BOOLEAN RegsSet;
 
-	uint8_t      Flags[15];
-
-	USHORT XValue[15];
-
-	USHORT YValue[15];
-
-	USHORT PValue[15];
-
-	uint8_t buttonCap;
-
-	BYTE BUTTONSPRESSED;
-
-	USHORT TIMEINT;
-
-	LARGE_INTEGER LastTime;
-
-	uint16_t max_x;
-	uint16_t max_y;
-
-	uint8_t max_x_hid[2];
-	uint8_t max_y_hid[2];
-
-	uint16_t phy_x;
-	uint16_t phy_y;
-
-	uint8_t phy_x_hid[2];
-	uint8_t phy_y_hid[2];
-
 	WDFREQUEST lastRequest;
+
+	WDFTIMER Timer;
+
+	struct csgesture_softc sc;
+
+	struct cyapa_regs lastregs;
 
 } CYAPA_CONTEXT, *PCYAPA_CONTEXT;
 

@@ -37,12 +37,18 @@
     <ClInclude Include="smbus.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="gesturerec.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="cyapa.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="smbus.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="csgesture.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
