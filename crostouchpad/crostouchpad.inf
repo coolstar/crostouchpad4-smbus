@@ -43,6 +43,8 @@ crostouchpad.sys  = 1,,
 [Standard.NT$ARCH$]
 %CrosTouchpad.DeviceDesc%=CrosTouchpad_Device, PCI\VEN_8086&DEV_1E22&SUBSYS_04B418D1
 %CrosTouchpad.DeviceDesc%=CrosTouchpad_Device, PCI\VEN_8086&DEV_1C22&SUBSYS_04B418D1
+%CrosTouchpad.DeviceDesc%=CrosTouchpad_Device, PCI\VEN_8086&DEV_1E22&SUBSYS_18D104B4
+%CrosTouchpad.DeviceDesc%=CrosTouchpad_Device, PCI\VEN_8086&DEV_1C22&SUBSYS_18D104B4
 
 [CrosTouchpad_Device.NT]
 CopyFiles=Drivers_Dir
